@@ -5,10 +5,20 @@ from hashlib import sha256
 from typing import Dict
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, HttpUrl
 
 app = FastAPI(title="Agentic URL Shortener", version="1.0.0")
+
+# The demo UI runs separately on localhost:3000.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 class ShortenRequest(BaseModel):
