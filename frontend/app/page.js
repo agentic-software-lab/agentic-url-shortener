@@ -39,13 +39,13 @@ export default function Home() {
   return (
     <main>
       <section className="hero">
-        <p className="eyebrow">CONTROLLED AUTONOMY DEMO</p>
-        <h1>Agentic URL Shortener</h1>
-        <p>Test the working service locally, then inspect the SDLC orchestration scenarios and governance controls.</p>
+        <p className="eyebrow">CONTROLLED AUTONOMY • AGENTIC SDLC</p>
+        <h1>Agentic Software Engineering System</h1>
+        <p>Explore a controlled-autonomy SDLC workflow for requirement analysis, planning, implementation, validation, and release readiness, using a URL shortener as the reference application.</p>
       </section>
 
       <section className="card">
-        <h2>1. Shorten a URL</h2>
+        <h2>1. Reference Application — URL Shortener</h2>
         <form onSubmit={shorten}>
           <label>Long URL</label>
           <div className="row">
@@ -67,7 +67,7 @@ export default function Home() {
       </section>
 
       <section className="card">
-        <h2>2. Agentic SDLC workflow</h2>
+        <h2>2. Agentic SDLC Workflow</h2>
         <div className="flow">
           <span>Requirement</span><b>→</b><span>Requirements Agent</span><b>→</b><span>Planner</span><b>→</b><span>Architecture + Security</span><b>→</b><span className="approval">Human Approval</span><b>→</b><span>Implementation</span><b>→</b><span>Test + Docs</span><b>→</b><span>Validation</span><b>→</b><span>Release</span>
         </div>
