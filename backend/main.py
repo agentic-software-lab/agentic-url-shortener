@@ -10,11 +10,12 @@ from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, HttpUrl
 
 app = FastAPI(
-    title="Agentic URL Shortener",
+    title="Agentic Software Engineering System",
     version="1.0.0",
     description=(
-        "A testable URL-shortener API used by the agentic SDLC prototype. "
-        "Create a short URL, open the redirect endpoint in a browser, and inspect click analytics."
+        "A controlled-autonomy SDLC orchestration prototype demonstrating requirement analysis, "
+        "engineering workflow execution, validation, governance, and release readiness using a "
+        "URL shortener as the reference application."
     ),
 )
 
