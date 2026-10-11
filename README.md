@@ -428,7 +428,7 @@ python3 -m scenarios.recovery
 
 This demo shows a primary adapter failing twice before fallback succeeds, then a separate partial-file failure whose compensation deletes the disposable candidate. Metrics include `fallback_count` and `rollback_count` (attempted compensation count), and audit events record outcomes.
 
-Compensation is opt-in per node, not a transaction across the entire workflow. It does not undo successful upstream nodes, deployments, or arbitrary external effects. Fallback discards partial context changes but adapters remain responsible for external side effects. Existing application scenarios do not automatically register recovery callbacks. Dynamic replanning remains a future implementation.
+Compensation is opt-in per node, not a transaction across the entire workflow. It does not undo successful upstream nodes, deployments, or arbitrary external effects. Fallback discards partial context changes but adapters remain responsible for external side effects. Existing application scenarios do not automatically register recovery callbacks. Requirement-change replanning is available through the API; selective downstream replanning is not implemented.
 
 ### 6. Auditability
 
@@ -623,3 +623,19 @@ agentic-url-shortener/
 - **Approvals:** The API waits for explicit approval requests. Scenario scripts supply approvals automatically for demonstrations.
 - **Orchestrator service:** The API on port 8001 stores workflow state in memory. Use one worker; restarting the service clears workflows. Authentication and durable workflow storage are future improvements.
 - **Metrics:** `end_to_end_latency_ms` currently measures the latest execution call, and `success_rate` is the fraction of completed nodes.
+
+
+## Requirement Changes and Replanning
+
+Use `POST /workflows/{workflow_id}/replan` with a revised requirement and supported scenario:
+
+```json
+{
+  "scenario": "ambiguous",
+  "requirement": "Revise the short-link analytics scope"
+}
+```
+
+The same workflow ID receives an incremented `revision`. Prior decisions, artifacts, status, and metrics are preserved in `history`, while current outputs are invalidated. Approve node `replan` before the revised graph can run. Then provide clarification if required and approve implementation and release again. Prior approvals do not authorize the revised candidate.
+
+This is a full graph rebuild using supported deterministic scenario builders, not automatic LLM planning or selective descendant invalidation. Old candidate files are retained for review and need manual cleanup. Replanning does not undo external side effects or deploy a candidate; the API serializes mutations within one process.

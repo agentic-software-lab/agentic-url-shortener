@@ -94,3 +94,35 @@ def test_generated_validation_failure_blocks_release(monkeypatch):
     assert data['nodes']['testing'] == 'failed'
     assert data['nodes']['release'] == 'blocked'
     assert client.post(f'/workflows/{key}/approvals/release').status_code == 409
+
+
+def test_replan_invalidates_candidate_and_requires_fresh_approvals():
+    key = client.post('/workflows', json={'requirement':'Build URL shortener'}).json()['workflow_id']
+    first = client.post(f'/workflows/{key}/approvals/implementation').json()
+    old_workspace = first['artifacts']['workspace']
+    revised = client.post(f'/workflows/{key}/replan', json={
+        'scenario':'ambiguous', 'requirement':'Build short links with revised analytics scope'}).json()
+    assert revised['revision'] == 2
+    assert revised['pending_approvals'] == ['replan']
+    assert 'workspace' not in revised['artifacts']
+    assert revised['history'][0]['artifacts']['workspace'] == old_workspace
+    assert client.post(f'/workflows/{key}/approvals/release').status_code == 409
+    data = client.post(f'/workflows/{key}/approvals/replan').json()
+    assert data['pending_approvals'] == ['clarify']
+    client.post(f'/workflows/{key}/clarification', json={
+        'analytics':False, 'accept_no_expiration_or_aliases':True})
+    data = client.post(f'/workflows/{key}/approvals/clarify').json()
+    assert data['pending_approvals'] == ['implementation']
+    data = client.post(f'/workflows/{key}/approvals/implementation').json()
+    assert data['artifacts']['workspace'] != old_workspace
+    assert data['artifacts']['validation']['exit_code'] == 0
+    assert "@app.get('/urls/{code}/analytics')" not in data['artifacts']['generated_files']['main.py']
+    assert client.post(f'/workflows/{key}/approvals/release').json()['status'] == 'succeeded'
+
+
+def test_invalid_replan_preserves_existing_workflow():
+    key = client.post('/workflows', json={'requirement':'Build URLs'}).json()['workflow_id']
+    assert client.post(f'/workflows/{key}/replan', json={'requirement':' '}).status_code == 422
+    assert client.post(f'/workflows/{key}/replan', json={
+        'scenario':'brownfield_expiration', 'requirement':'Add custom aliases'}).status_code == 422
+    assert client.get(f'/workflows/{key}').json()['revision'] == 1

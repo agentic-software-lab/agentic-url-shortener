@@ -24,6 +24,8 @@ class WorkflowContext:
     artifacts: Dict[str, object] = field(default_factory=dict)
     audit_log: List[str] = field(default_factory=list)
     metrics: Dict[str, float] = field(default_factory=dict)
+    revision: int = 1
+    history: List[Dict[str, object]] = field(default_factory=list)
 
 
 @dataclass
