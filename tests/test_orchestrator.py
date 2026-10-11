@@ -129,3 +129,37 @@ def test_failed_fallback_and_rollback_safe_stop():
     assert 'fallback_failed:work:RuntimeError' in context.audit_log
     assert 'rollback_failed:work:RuntimeError' in context.audit_log
     assert context.metrics['fallback_count'] == context.metrics['rollback_count'] == 1
+
+
+def test_latency_includes_approval_wait_and_freezes(monkeypatch):
+    clock = {'now':0.0}
+    monkeypatch.setattr('orchestrator.engine.perf_counter', lambda: clock['now'])
+    engine = WorkflowEngine([Node('work',lambda context: None,requires_human_approval=True)])
+    context = WorkflowContext('timing')
+    engine.execute(context)
+    clock['now'] = 10.0
+    engine.approve('work',context)
+    engine.execute(context)
+    assert context.metrics['end_to_end_latency_ms'] == 10000
+    assert context.metrics['active_execution_ms'] == 0
+    clock['now'] = 20.0
+    engine.execute(context)
+    assert context.metrics['end_to_end_latency_ms'] == 10000
+
+
+def test_mttr_records_recovered_nodes_only(monkeypatch):
+    clock = {'now':0.0}
+    monkeypatch.setattr('orchestrator.engine.perf_counter', lambda: clock['now'])
+    attempts = {'count':0}
+    def work(context):
+        attempts['count'] += 1
+        if attempts['count'] == 1: raise RuntimeError('transient')
+        clock['now'] = 2.0
+    context = WorkflowContext('recovery timing')
+    WorkflowEngine([Node('work',work,max_retries=1)]).execute(context)
+    assert context.metrics['mttr_ms'] == 2000
+    assert context.metrics['recovered_node_count'] == 1
+    assert context.metrics['workflow_succeeded'] == 1
+    clean = WorkflowContext('no failures')
+    WorkflowEngine([Node('clean',lambda context: None)]).execute(clean)
+    assert 'mttr_ms' not in clean.metrics

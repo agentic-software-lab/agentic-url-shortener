@@ -622,7 +622,7 @@ agentic-url-shortener/
 - **Agents:** Greenfield and ambiguous agents generate runnable scaffold code, tests, and documentation and execute pytest. The bounded brownfield expiration adapter generates actual code, tests, and a diff, then executes regression tests in isolation. General LLM-driven development is a future enhancement.
 - **Approvals:** The API waits for explicit approval requests. Scenario scripts supply approvals automatically for demonstrations.
 - **Orchestrator service:** The API on port 8001 stores workflow state in memory. Use one worker; restarting the service clears workflows. Authentication and durable workflow storage are future improvements.
-- **Metrics:** `end_to_end_latency_ms` currently measures the latest execution call, and `success_rate` is the fraction of completed nodes.
+- **Metrics:** `end_to_end_latency_ms` spans execution and approval waits until termination. `success_rate` remains a compatibility alias for completed-node fraction, not an aggregate workflow success rate.
 
 
 ## Requirement Changes and Replanning
@@ -639,3 +639,21 @@ Use `POST /workflows/{workflow_id}/replan` with a revised requirement and suppor
 The same workflow ID receives an incremented `revision`. Prior decisions, artifacts, status, and metrics are preserved in `history`, while current outputs are invalidated. Approve node `replan` before the revised graph can run. Then provide clarification if required and approve implementation and release again. Prior approvals do not authorize the revised candidate.
 
 This is a full graph rebuild using supported deterministic scenario builders, not automatic LLM planning or selective descendant invalidation. Old candidate files are retained for review and need manual cleanup. Replanning does not undo external side effects or deploy a candidate; the API serializes mutations within one process.
+
+
+## Reliability Metric Definitions
+
+| Metric | Meaning |
+| --- | --- |
+| `end_to_end_latency_ms` | Time from first execution to the latest execution boundary, including approval waits; freezes at success or terminal failure. |
+| `active_execution_ms` | Cumulative time inside execute calls, excluding human wait between calls. |
+| `last_execution_ms` | Duration of the latest execute call. |
+| `completed_node_fraction` / `success_rate` | Successful nodes divided by total nodes in this revision. |
+| `workflow_succeeded` | 1 only when all nodes succeed; otherwise 0. |
+| `retry_count` | Primary attempts beyond each node's first attempt. |
+| `fallback_count` / `fallback_success_count` | Fallback attempts and successful callback outcomes. |
+| `rollback_count` / `rollback_success_count` / `rollback_failure_count` | Compensation attempts and their outcomes. |
+| `recovered_node_count` | Failed nodes that later succeeded through retry or fallback. |
+| `mttr_ms` | Mean time from a recovered node's first failure to successful context merge; omitted when there are no recovered nodes. |
+
+Metrics are per workflow revision and update after execute calls. Replanning begins new measurements and preserves prior metrics in history. MTTR here describes stage recovery, not production incident recovery. Aggregate success rates and retry/rollback frequencies across workflows are not yet computed.
