@@ -35,7 +35,7 @@ cd agentic-url-shortener
 ### 2. Create a Python virtual environment
 
 ```bash
-python -m venv .venv
+python3 -m venv .venv
 ```
 
 Activate it.
@@ -55,7 +55,7 @@ Windows:
 ### 3. Install dependencies
 
 ```bash
-pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
 ```
 
 ### 4. Start the API
@@ -83,19 +83,19 @@ http://127.0.0.1:8000/docs
 Greenfield:
 
 ```bash
-python -m scenarios.greenfield
+python3 -m scenarios.greenfield
 ```
 
 Brownfield:
 
 ```bash
-python -m scenarios.brownfield
+python3 -m scenarios.brownfield
 ```
 
 Ambiguous requirement:
 
 ```bash
-python -m scenarios.ambiguous
+python3 -m scenarios.ambiguous
 ```
 
 Each scenario prints workflow status, audit events, decisions, or assumptions so the orchestration can be inspected directly.
@@ -105,7 +105,7 @@ Each scenario prints workflow status, audit events, decisions, or assumptions so
 ## Run Tests
 
 ```bash
-python -m pytest
+python3 -m pytest
 ```
 
 Tests currently validate:
