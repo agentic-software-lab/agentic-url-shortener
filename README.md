@@ -347,7 +347,9 @@ architecture + security
 implementation
 ```
 
-Architecture and security are independent after the requirement is understood, so they can conceptually run in parallel. Implementation cannot begin until both succeed.
+Architecture and security are independent after the requirement is understood, so the engine runs them concurrently. Implementation cannot begin until both succeed and its human approval gate is approved.
+
+Independent ready stages run in a thread pool with up to four workers. Each stage receives an isolated context snapshot. The coordinator joins each execution wave, merges artifact updates and appended decisions in node order, then schedules dependent stages. Conflicting artifact writes fail the conflicting stage and block its dependents. Agents should write distinct artifact keys and append decisions; failed-stage context changes are discarded. External side effects are not rolled back by this merge strategy.
 
 ### 3. Shared Workflow State
 

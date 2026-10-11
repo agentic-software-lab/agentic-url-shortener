@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
 from time import perf_counter
@@ -52,39 +54,60 @@ class WorkflowEngine:
 
     def execute(self, context: WorkflowContext) -> WorkflowContext:
         started = perf_counter()
-        progress = True
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            while True:
+                ready = []
+                for node in self.nodes.values():
+                    if node.status not in {NodeStatus.PENDING, NodeStatus.BLOCKED}:
+                        continue
+                    if not self._dependencies_succeeded(node):
+                        node.status = NodeStatus.BLOCKED
+                        continue
+                    if node.requires_human_approval:
+                        node.status = NodeStatus.WAITING_APPROVAL
+                        context.audit_log.append(f"approval_required:{node.name}")
+                        continue
+                    ready.append(node)
+                if not ready:
+                    break
 
-        while progress:
-            progress = False
-            for node in self.nodes.values():
-                if node.status not in {NodeStatus.PENDING, NodeStatus.BLOCKED}:
-                    continue
-                if not self._dependencies_succeeded(node):
-                    node.status = NodeStatus.BLOCKED
-                    continue
-                if node.requires_human_approval:
-                    node.status = NodeStatus.WAITING_APPROVAL
-                    context.audit_log.append(f"approval_required:{node.name}")
-                    progress = True
-                    continue
+                # Isolated snapshots avoid concurrent mutations of shared context.
+                baseline = deepcopy(context)
+                futures = []
+                for node in ready:
+                    node.status = NodeStatus.RUNNING
+                    node.attempts += 1
+                    context.audit_log.append(f"start:{node.name}:attempt={node.attempts}")
+                    worker_context = deepcopy(baseline)
+                    futures.append((node, worker_context, pool.submit(node.run, worker_context)))
 
-                node.status = NodeStatus.RUNNING
-                node.attempts += 1
-                context.audit_log.append(f"start:{node.name}:attempt={node.attempts}")
-
-                try:
-                    node.run(context)
-                    node.status = NodeStatus.SUCCEEDED
-                    context.audit_log.append(f"success:{node.name}")
-                except Exception as exc:  # bounded retry is intentional here
-                    context.audit_log.append(f"failure:{node.name}:{type(exc).__name__}")
-                    if node.attempts <= node.max_retries:
-                        node.status = NodeStatus.PENDING
-                        context.audit_log.append(f"retry_scheduled:{node.name}")
-                    else:
-                        node.status = NodeStatus.FAILED
-                        context.audit_log.append(f"safe_stop:{node.name}")
-                progress = True
+                # Synchronize the whole wave before scheduling dependent stages.
+                for node, worker_context, future in futures:
+                    try:
+                        future.result()
+                        updates = {
+                            key: value for key, value in worker_context.artifacts.items()
+                            if key not in baseline.artifacts or value != baseline.artifacts[key]
+                        }
+                        for key, value in updates.items():
+                            if (key in context.artifacts
+                                and (key not in baseline.artifacts
+                                     or context.artifacts[key] != baseline.artifacts[key])
+                                and context.artifacts[key] != value):
+                                raise ValueError(f"Concurrent artifact conflict: {key}")
+                        context.artifacts.update(updates)
+                        context.decisions.extend(worker_context.decisions[len(baseline.decisions):])
+                        context.audit_log.extend(worker_context.audit_log[len(baseline.audit_log):])
+                        node.status = NodeStatus.SUCCEEDED
+                        context.audit_log.append(f"success:{node.name}")
+                    except Exception as exc:
+                        context.audit_log.append(f"failure:{node.name}:{type(exc).__name__}")
+                        if node.attempts <= node.max_retries:
+                            node.status = NodeStatus.PENDING
+                            context.audit_log.append(f"retry_scheduled:{node.name}")
+                        else:
+                            node.status = NodeStatus.FAILED
+                            context.audit_log.append(f"safe_stop:{node.name}")
 
         context.metrics["end_to_end_latency_ms"] = (perf_counter() - started) * 1000
         context.metrics["success_rate"] = self._success_rate()
