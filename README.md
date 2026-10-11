@@ -1,5 +1,7 @@
 # Agentic Software Engineering System
 
+This repo demonstrates controlled agent anatomy across SDLC..
+
 ## Modules
 
 - **URL Shortener (port 8000):** FastAPI service for creating short URLs, redirects, and click analytics.
