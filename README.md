@@ -1,5 +1,5 @@
 # Agentic Software Engineering System : URL shortener
-This repo demonstrates controlled agent anatomy across SDLC..
+An agentic software engineering system that demonstrates controlled autonomy across the software development lifecycle (SDLC), using a FastAPI URL shortener as its reference application. The orchestration engine coordinates requirements, architecture, security, implementation, testing, documentation, and release through dependency-aware workflows, human approval gates, bounded retries, and auditable execution.
 
 ## Modules
 
