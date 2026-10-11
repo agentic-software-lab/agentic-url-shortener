@@ -42,3 +42,16 @@ def test_failure_blocks_implementation_and_workflows_are_isolated():
     assert failed['pending_approvals'] == []
     assert good['pending_approvals'] == ['implementation']
     assert failed['workflow_id'] != good['workflow_id']
+
+
+def test_real_brownfield_change_and_validation():
+    result = client.post('/workflows', json={'scenario':'brownfield_expiration','requirement':'Add link expiration'})
+    assert result.status_code == 201
+    key = result.json()['workflow_id']
+    assert result.json()['pending_approvals'] == ['implementation']
+    result = client.post(f'/workflows/{key}/approvals/implementation').json()
+    assert result['pending_approvals'] == ['release']
+    assert result['artifacts']['validation']['exit_code'] == 0
+    assert 'expires_at' in result['artifacts']['diff']
+    assert 'test_expiration.py' in result['artifacts']['diff']
+    assert client.post(f'/workflows/{key}/approvals/release').json()['status'] == 'succeeded'

@@ -98,7 +98,25 @@ Open [Orchestrator Swagger UI](http://127.0.0.1:8001/docs). Create a workflow wi
 | GET | `/workflows/{workflow_id}/events` | Read audit events. |
 | GET | `/workflows/{workflow_id}/metrics` | Read workflow metrics. |
 
-The API currently uses the greenfield workflow. Brownfield and ambiguous scenarios remain available through their scenario commands.
+### Review a real brownfield change
+
+Create a workflow in Swagger with:
+
+```json
+{
+  "scenario": "brownfield_expiration",
+  "requirement": "Add optional link expiration without breaking existing redirects"
+}
+```
+
+1. Inspect `artifacts.tasks` and `artifacts.impacted_modules`, then approve `implementation`.
+2. The adapter generates code and tests in an isolated temporary workspace and runs pytest with a 60-second timeout.
+3. Inspect `artifacts.diff`, `artifacts.documentation`, and `artifacts.validation`. Passing tests unlock the `release` approval; a failed check blocks release.
+4. Approve `release` to mark the candidate reviewed. This does not deploy or modify the source repository. The candidate workspace path is returned for local inspection.
+
+The generated feature adds optional `expires_in_seconds`, preserves non-expiring links, and returns HTTP 410 for expired redirects. The adapter inspects the current Python AST and uses bounded deterministic edit rules; unsupported code shapes stop for manual replanning. It is not an LLM-powered general coding agent. Temporary candidate directories require manual cleanup when no longer needed.
+
+Omit `scenario` to use the original greenfield demonstration. Brownfield analytics and ambiguous demonstrations remain available through scenario commands.
 
 ---
 
@@ -581,7 +599,7 @@ agentic-url-shortener/
 ## Current Scope and Future Improvements
 
 - **Storage:** URL data is stored in memory and resets on restart; persistent storage is a future improvement.
-- **Agents:** Agents use predefined logic to produce plans and workflow artifacts; LLM integration is a future enhancement.
+- **Agents:** Greenfield agents use predefined plans. The bounded brownfield expiration adapter generates actual code, tests, and a diff, then executes regression tests in isolation. General LLM-driven development is a future enhancement.
 - **Approvals:** The API waits for explicit approval requests. Scenario scripts supply approvals automatically for demonstrations.
 - **Orchestrator service:** The API on port 8001 stores workflow state in memory. Use one worker; restarting the service clears workflows. Authentication and durable workflow storage are future improvements.
 - **Metrics:** `end_to_end_latency_ms` currently measures the latest execution call, and `success_rate` is the fraction of completed nodes.

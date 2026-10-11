@@ -1,5 +1,6 @@
 """In-memory workflow API. Run with one worker to preserve workflow state."""
 from threading import RLock
+from typing import Literal
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException
@@ -7,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from orchestrator.engine import WorkflowContext
 from scenarios.greenfield import build_engine
+from agents.expiration import build_engine as build_expiration_engine
 
 app = FastAPI(title="Agentic Orchestrator", version="1.0.0")
 workflows = {}
@@ -15,6 +17,7 @@ lock = RLock()
 
 class WorkflowRequest(BaseModel):
     requirement: str = Field(min_length=1)
+    scenario: Literal["greenfield", "brownfield_expiration"] = "greenfield"
 
 
 def lookup(workflow_id):
@@ -49,7 +52,10 @@ def create_workflow(payload: WorkflowRequest):
         raise HTTPException(422, "Requirement cannot be blank")
     with lock:
         workflow_id = str(uuid4())
-        engine, context = build_engine(), WorkflowContext(payload.requirement)
+        if payload.scenario == "brownfield_expiration" and "expir" not in payload.requirement.lower():
+            raise HTTPException(422, "The bounded brownfield adapter supports link expiration only")
+        engine = build_expiration_engine() if payload.scenario == "brownfield_expiration" else build_engine()
+        context = WorkflowContext(payload.requirement)
         engine.execute(context)
         workflows[workflow_id] = (engine, context)
         return snapshot(workflow_id, engine, context)
