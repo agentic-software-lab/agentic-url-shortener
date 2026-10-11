@@ -8,14 +8,17 @@ from agents.core import (
     testing_agent,
 )
 from orchestrator.engine import Node, WorkflowContext, WorkflowEngine
+from agents.generation import implementation_agent, testing_agent, documentation_agent
 
 
 def ambiguity_resolution_agent(context: WorkflowContext) -> None:
+    if "clarification" not in context.artifacts:
+        raise ValueError("Clarification choices must be supplied before approval")
     original = context.requirement
     assumptions = {
         "expiration": "not enabled by default",
         "custom_aliases": "out of scope for first release",
-        "analytics": "track aggregate click count only",
+        "analytics": "track aggregate click count only" if context.artifacts["clarification"]["analytics"] else "excluded",
         "redirect_status": 307,
     }
     context.artifacts["ambiguities"] = [
@@ -25,36 +28,46 @@ def ambiguity_resolution_agent(context: WorkflowContext) -> None:
     ]
     context.artifacts["assumptions"] = assumptions
     context.artifacts["normalized_requirement"] = (
-        "Build a URL shortener with stable redirects and aggregate click analytics; "
+        "Build a URL shortener with stable redirects; "
+        + ("include aggregate click analytics; " if context.artifacts["clarification"]["analytics"] else "exclude analytics; ")
+        +
         "do not add expiration or custom aliases in the first release."
     )
     context.decisions.append(f"Clarified ambiguous request: {original!r}")
     context.decisions.append(f"Assumptions adopted: {assumptions}")
 
 
-def run() -> None:
-    context = WorkflowContext("Make the short links production ready and add useful analytics.")
-    engine = WorkflowEngine(
+def build_engine() -> WorkflowEngine:
+    return WorkflowEngine(
         [
             Node("requirements", requirements_agent),
             Node("clarify", ambiguity_resolution_agent, {"requirements"}, requires_human_approval=True),
             Node("architecture", architecture_agent, {"clarify"}),
             Node("security", security_agent, {"clarify"}),
-            Node("implementation", implementation_agent, {"architecture", "security"}),
+            Node("implementation", implementation_agent, {"architecture", "security"}, requires_human_approval=True),
             Node("testing", testing_agent, {"implementation"}),
             Node("documentation", documentation_agent, {"implementation"}),
             Node("release", release_agent, {"testing", "documentation"}, requires_human_approval=True),
         ]
     )
 
+def run() -> None:
+    context = WorkflowContext("Make the short links production ready and add useful analytics.")
+    context.artifacts['clarification'] = {'analytics':True}
+    context.artifacts['questions'] = ['Include aggregate click analytics?', 'Accept no expiration or custom aliases?']
+    engine = build_engine()
     engine.execute(context)
     engine.approve("clarify", context)
+    engine.execute(context)
+    engine.approve("implementation", context)
     engine.execute(context)
     engine.approve("release", context)
     engine.execute(context)
 
     print("Assumptions:", context.artifacts["assumptions"])
     print("Statuses:", engine.statuses())
+    print("Workspace:", context.artifacts.get("workspace"))
+    print("Validation:", context.artifacts.get("validation"))
     print("Audit log:", context.audit_log)
 
 

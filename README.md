@@ -122,6 +122,12 @@ Omit `scenario` to use the original greenfield demonstration. Brownfield analyti
 
 ## Run the Agentic Scenarios
 
+Greenfield and ambiguous scenarios now generate `main.py`, `test_generated.py`, and a README in an isolated temporary workspace and run real pytest validation. Output includes the workspace path and test results. CLI demos supply approvals and clarification defaults automatically; use the API for explicit human choices. Generation uses a bounded deterministic scaffold, not general natural-language coding.
+
+For the ambiguous API flow, create a workflow with `scenario: "ambiguous"`. Submit `POST /workflows/{workflow_id}/clarification` with `{"analytics": true, "accept_no_expiration_or_aliases": true}`, then approve `clarify`, `implementation`, and finally `release`. Setting `analytics` to false excludes the analytics endpoint. Unsupported expiration or alias scope is rejected rather than silently implemented.
+
+Review `artifacts.generated_files`, `artifacts.diff`, `artifacts.documentation`, and `artifacts.validation`. A failing test blocks release. Candidate files do not change the running service and require manual cleanup when no longer needed.
+
 Greenfield:
 
 ```bash
@@ -613,7 +619,7 @@ agentic-url-shortener/
 ## Current Scope and Future Improvements
 
 - **Storage:** URL data is stored in memory and resets on restart; persistent storage is a future improvement.
-- **Agents:** Greenfield agents use predefined plans. The bounded brownfield expiration adapter generates actual code, tests, and a diff, then executes regression tests in isolation. General LLM-driven development is a future enhancement.
+- **Agents:** Greenfield and ambiguous agents generate runnable scaffold code, tests, and documentation and execute pytest. The bounded brownfield expiration adapter generates actual code, tests, and a diff, then executes regression tests in isolation. General LLM-driven development is a future enhancement.
 - **Approvals:** The API waits for explicit approval requests. Scenario scripts supply approvals automatically for demonstrations.
 - **Orchestrator service:** The API on port 8001 stores workflow state in memory. Use one worker; restarting the service clears workflows. Authentication and durable workflow storage are future improvements.
 - **Metrics:** `end_to_end_latency_ms` currently measures the latest execution call, and `success_rate` is the fraction of completed nodes.

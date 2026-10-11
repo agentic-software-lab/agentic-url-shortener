@@ -58,3 +58,39 @@ def test_real_brownfield_change_and_validation():
     assert 'int | None' not in result['artifacts']['diff']
     assert 'test_expiration.py' in result['artifacts']['diff']
     assert client.post(f'/workflows/{key}/approvals/release').json()['status'] == 'succeeded'
+
+
+def test_greenfield_generates_runnable_artifacts():
+    key = client.post('/workflows',json={'requirement':'Build a URL shortener'}).json()['workflow_id']
+    data = client.post(f'/workflows/{key}/approvals/implementation').json()
+    assert data['pending_approvals'] == ['release']
+    assert data['artifacts']['validation']['exit_code'] == 0
+    assert 'main.py' in data['artifacts']['generated_files']
+    assert 'test_generated.py' in data['artifacts']['generated_files']
+    assert '3 passed' in data['artifacts']['validation']['output']
+    assert 'Run:' in data['artifacts']['documentation']
+
+
+def test_ambiguous_requires_choices_and_changes_generated_scope():
+    key = client.post('/workflows',json={'scenario':'ambiguous','requirement':'Make useful short links'}).json()['workflow_id']
+    assert client.post(f'/workflows/{key}/approvals/clarify').status_code == 409
+    assert client.post(f'/workflows/{key}/clarification',json={'analytics':False,'accept_no_expiration_or_aliases':False}).status_code == 422
+    assert client.post(f'/workflows/{key}/clarification',json={'analytics':False,'accept_no_expiration_or_aliases':True}).status_code == 200
+    data = client.post(f'/workflows/{key}/approvals/clarify').json()
+    assert data['pending_approvals'] == ['implementation']
+    data = client.post(f'/workflows/{key}/approvals/implementation').json()
+    assert data['pending_approvals'] == ['release']
+    assert data['artifacts']['validation']['exit_code'] == 0
+    assert "@app.get('/urls/{code}/analytics')" not in data['artifacts']['generated_files']['main.py']
+    assert data['artifacts']['assumptions']['analytics'] == 'excluded'
+    assert client.post(f'/workflows/{key}/approvals/release').json()['status'] == 'succeeded'
+
+
+def test_generated_validation_failure_blocks_release(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setattr('agents.generation.subprocess.run',lambda *a, **k: SimpleNamespace(returncode=1,stdout='test failure',stderr=''))
+    key = client.post('/workflows',json={'requirement':'Build URL shortener'}).json()['workflow_id']
+    data = client.post(f'/workflows/{key}/approvals/implementation').json()
+    assert data['nodes']['testing'] == 'failed'
+    assert data['nodes']['release'] == 'blocked'
+    assert client.post(f'/workflows/{key}/approvals/release').status_code == 409

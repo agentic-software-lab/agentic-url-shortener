@@ -8,6 +8,7 @@ from agents.core import (
     testing_agent,
 )
 from orchestrator.engine import Node, WorkflowContext, WorkflowEngine
+from agents.generation import implementation_agent, testing_agent, documentation_agent
 
 
 def build_engine() -> WorkflowEngine:
@@ -47,6 +48,8 @@ def run() -> None:
     print("Statuses:", engine.statuses())
     print("Decisions:", context.decisions)
     print("Metrics:", context.metrics)
+    print("Workspace:", context.artifacts.get("workspace"))
+    print("Validation:", context.artifacts.get("validation"))
     print("Audit log:")
     for entry in context.audit_log:
         print(" -", entry)

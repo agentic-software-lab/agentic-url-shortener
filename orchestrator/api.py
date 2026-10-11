@@ -2,6 +2,7 @@
 from threading import RLock
 from typing import Literal
 from uuid import uuid4
+from scenarios.ambiguous import build_engine as build_ambiguous_engine
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
@@ -17,7 +18,7 @@ lock = RLock()
 
 class WorkflowRequest(BaseModel):
     requirement: str = Field(min_length=1)
-    scenario: Literal["greenfield", "brownfield_expiration"] = "greenfield"
+    scenario: Literal["greenfield", "brownfield_expiration", "ambiguous"] = "greenfield"
 
 
 def lookup(workflow_id):
@@ -55,7 +56,11 @@ def create_workflow(payload: WorkflowRequest):
         if payload.scenario == "brownfield_expiration" and "expir" not in payload.requirement.lower():
             raise HTTPException(422, "The bounded brownfield adapter supports link expiration only")
         engine = build_expiration_engine() if payload.scenario == "brownfield_expiration" else build_engine()
+        if payload.scenario == "ambiguous":
+            engine = build_ambiguous_engine()
         context = WorkflowContext(payload.requirement)
+        if payload.scenario == "ambiguous":
+            context.artifacts["questions"] = ["Include aggregate click analytics?", "Accept no expiration or custom aliases?"]
         engine.execute(context)
         workflows[workflow_id] = (engine, context)
         return snapshot(workflow_id, engine, context)
@@ -79,6 +84,8 @@ def approve_node(workflow_id: str, node_name: str):
         engine, context = lookup(workflow_id)
         if node_name not in engine.nodes:
             raise HTTPException(404, "Workflow node not found")
+        if node_name == "clarify" and "clarification" not in context.artifacts:
+            raise HTTPException(409, "Submit clarification choices first")
         try:
             engine.approve(node_name, context)
         except ValueError as exc:
@@ -97,3 +104,19 @@ def events(workflow_id: str):
 def metrics(workflow_id: str):
     with lock:
         return {"workflow_id": workflow_id, "metrics": lookup(workflow_id)[1].metrics}
+
+
+class ClarificationRequest(BaseModel):
+    analytics: bool
+    accept_no_expiration_or_aliases: Literal[True]
+
+
+@app.post('/workflows/{workflow_id}/clarification')
+def clarify(workflow_id: str, payload: ClarificationRequest):
+    with lock:
+        engine, context = lookup(workflow_id)
+        if 'clarify' not in engine.nodes or engine.statuses()['clarify'] != 'waiting_approval':
+            raise HTTPException(409, 'Workflow is not waiting for clarification')
+        context.artifacts['clarification'] = payload.model_dump()
+        context.audit_log.append('clarification_submitted')
+        return snapshot(workflow_id, engine, context)
