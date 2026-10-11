@@ -35,6 +35,10 @@ class Node:
     max_retries: int = 1
     status: NodeStatus = NodeStatus.PENDING
     attempts: int = 0
+    fallback: Optional[Callable[[WorkflowContext], None]] = None
+    rollback: Optional[Callable[[WorkflowContext], None]] = None
+    fallback_used: bool = False
+    rollback_attempted: bool = False
 
 
 class WorkflowEngine:
@@ -79,7 +83,7 @@ class WorkflowEngine:
                     node.attempts += 1
                     context.audit_log.append(f"start:{node.name}:attempt={node.attempts}")
                     worker_context = deepcopy(baseline)
-                    futures.append((node, worker_context, pool.submit(node.run, worker_context)))
+                    futures.append((node, worker_context, pool.submit(self._run_attempt, node, worker_context)))
 
                 # Synchronize the whole wave before scheduling dependent stages.
                 for node, worker_context, future in futures:
@@ -101,18 +105,48 @@ class WorkflowEngine:
                         node.status = NodeStatus.SUCCEEDED
                         context.audit_log.append(f"success:{node.name}")
                     except Exception as exc:
+                        context.audit_log.extend(worker_context.audit_log[len(baseline.audit_log):])
                         context.audit_log.append(f"failure:{node.name}:{type(exc).__name__}")
                         if node.attempts <= node.max_retries:
                             node.status = NodeStatus.PENDING
                             context.audit_log.append(f"retry_scheduled:{node.name}")
                         else:
                             node.status = NodeStatus.FAILED
+                            if node.rollback is not None and not node.rollback_attempted:
+                                node.rollback_attempted = True
+                                context.audit_log.append(f"rollback_started:{node.name}")
+                                try:
+                                    node.rollback(worker_context)
+                                    context.audit_log.append(f"rollback_succeeded:{node.name}")
+                                except Exception as rollback_exc:
+                                    context.audit_log.append(f"rollback_failed:{node.name}:{type(rollback_exc).__name__}")
                             context.audit_log.append(f"safe_stop:{node.name}")
 
         context.metrics["end_to_end_latency_ms"] = (perf_counter() - started) * 1000
         context.metrics["success_rate"] = self._success_rate()
         context.metrics["retry_count"] = float(sum(max(0, n.attempts - 1) for n in self.nodes.values()))
+        context.metrics["fallback_count"] = float(sum(n.fallback_used for n in self.nodes.values()))
+        context.metrics["rollback_count"] = float(sum(n.rollback_attempted for n in self.nodes.values()))
         return context
+
+    def _run_attempt(self, node: Node, context: WorkflowContext) -> None:
+        original = deepcopy(context)
+        try:
+            node.run(context)
+        except Exception as exc:
+            if node.attempts <= node.max_retries or node.fallback is None or node.fallback_used:
+                raise
+            node.fallback_used = True
+            context.audit_log.append(f"primary_exhausted:{node.name}:{type(exc).__name__}")
+            context.audit_log.append(f"fallback_started:{node.name}")
+            context.artifacts = original.artifacts
+            context.decisions = original.decisions
+            try:
+                node.fallback(context)
+            except Exception as fallback_exc:
+                context.audit_log.append(f"fallback_failed:{node.name}:{type(fallback_exc).__name__}")
+                raise
+            context.audit_log.append(f"fallback_succeeded:{node.name}")
 
     def _success_rate(self) -> float:
         if not self.nodes:

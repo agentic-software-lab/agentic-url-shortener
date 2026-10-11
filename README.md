@@ -412,6 +412,18 @@ Retry    Safe Stop
 
 Once retries are exhausted, the node is marked failed and downstream dependent nodes remain blocked.
 
+### Recovery Controls
+
+Nodes can register a predefined `fallback` and a `rollback` compensation callback. The fallback runs at most once after primary retries are exhausted. Successful fallback output is merged through the same conflict checks as primary output. Terminal failure invokes the node's registered compensation at most once; failure of compensation is audited and release stays blocked.
+
+```bash
+python3 -m scenarios.recovery
+```
+
+This demo shows a primary adapter failing twice before fallback succeeds, then a separate partial-file failure whose compensation deletes the disposable candidate. Metrics include `fallback_count` and `rollback_count` (attempted compensation count), and audit events record outcomes.
+
+Compensation is opt-in per node, not a transaction across the entire workflow. It does not undo successful upstream nodes, deployments, or arbitrary external effects. Fallback discards partial context changes but adapters remain responsible for external side effects. Existing application scenarios do not automatically register recovery callbacks. Dynamic replanning remains a future implementation.
+
 ### 6. Auditability
 
 Every important event is added to the audit log.

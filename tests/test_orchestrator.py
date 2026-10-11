@@ -83,3 +83,49 @@ def test_conflicting_parallel_artifacts_block_join():
     engine.execute(context)
     assert engine.statuses() == {'a':'succeeded', 'b':'failed', 'join':'blocked'}
     assert context.artifacts['shared'] == 1
+
+
+def test_fallback_after_retry_budget_then_join():
+    def fail(context):
+        context.artifacts['partial'] = True
+        raise RuntimeError('primary failed')
+    def fallback(context):
+        assert 'partial' not in context.artifacts
+        context.artifacts['result'] = 'fallback'
+    def join(context): assert context.artifacts['result'] == 'fallback'
+    engine = WorkflowEngine([Node('work', fail, max_retries=1, fallback=fallback), Node('join', join, {'work'})])
+    context = WorkflowContext('fallback')
+    engine.execute(context)
+    assert engine.nodes['work'].attempts == 2
+    assert engine.statuses() == {'work':'succeeded', 'join':'succeeded'}
+    assert context.metrics['fallback_count'] == 1
+    assert 'fallback_succeeded:work' in context.audit_log
+
+
+def test_rollback_cleans_partial_side_effect_once(tmp_path):
+    candidate = tmp_path / 'candidate'
+    def fail(context):
+        candidate.write_text('partial')
+        raise RuntimeError('failed')
+    def rollback(context): candidate.unlink()
+    engine = WorkflowEngine([Node('work', fail, max_retries=0, rollback=rollback),
+        Node('release', lambda context: None, {'work'}, requires_human_approval=True)])
+    context = WorkflowContext('rollback')
+    engine.execute(context)
+    engine.execute(context)
+    assert not candidate.exists()
+    assert engine.statuses() == {'work':'failed', 'release':'blocked'}
+    assert context.metrics['rollback_count'] == 1
+    assert context.audit_log.count('rollback_succeeded:work') == 1
+
+
+def test_failed_fallback_and_rollback_safe_stop():
+    def fail(context): raise RuntimeError('failed')
+    engine = WorkflowEngine([Node('work', fail, max_retries=0, fallback=fail, rollback=fail),
+        Node('release', lambda context: None, {'work'})])
+    context = WorkflowContext('failure')
+    engine.execute(context)
+    assert engine.statuses() == {'work':'failed', 'release':'blocked'}
+    assert 'fallback_failed:work:RuntimeError' in context.audit_log
+    assert 'rollback_failed:work:RuntimeError' in context.audit_log
+    assert context.metrics['fallback_count'] == context.metrics['rollback_count'] == 1
