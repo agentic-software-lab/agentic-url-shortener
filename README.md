@@ -6,7 +6,7 @@ Human approval gates, bounded retries, and audit logs keep the workflow controll
 ## Modules
 
 - **URL Shortener (port 8000):** FastAPI service for creating short URLs, redirects, and click analytics.
-- **Orchestrator (port 8001):** Agentic SDLC orchestration engine for dependency-aware workflows, human approval gates, bounded retries, and audit trails.
+- **Orchestrator (planned port 8001; currently run via scenarios):** Agentic SDLC orchestration engine for dependency-aware workflows, human approval gates, bounded retries, and audit trails.
 - **Docs/Scenarios:** Architecture documentation and runnable greenfield, brownfield, and ambiguous-requirement workflow examples.
 
 ---
@@ -105,7 +105,7 @@ Each scenario prints workflow status, audit events, decisions, or assumptions so
 ## Run Tests
 
 ```bash
-pytest
+python -m pytest
 ```
 
 Tests currently validate:
