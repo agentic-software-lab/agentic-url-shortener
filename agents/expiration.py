@@ -30,10 +30,11 @@ def inspect_code(context):
 def generate_change(context):
     source = context.artifacts['source']
     edits = [
+        ('from typing import Dict', 'from typing import Dict, Optional'),
         ('from datetime import datetime, timezone', 'from datetime import datetime, timedelta, timezone'),
         ('from pydantic import BaseModel, HttpUrl', 'from pydantic import BaseModel, Field, HttpUrl'),
-        ('    url: HttpUrl', '    url: HttpUrl\n    expires_in_seconds: int | None = Field(default=None, gt=0, le=31536000)'),
-        ('    clicks: int = 0', '    clicks: int = 0\n    expires_at: datetime | None = None'),
+        ('    url: HttpUrl', '    url: HttpUrl\n    expires_in_seconds: Optional[int] = Field(default=None, gt=0, le=31536000)'),
+        ('    clicks: int = 0', '    clicks: int = 0\n    expires_at: Optional[datetime] = None'),
         ('    short_code = generate_code(original)', '    # Separate expiring mappings from the original non-expiring mapping.\n    key = original if payload.expires_in_seconds is None else f"{original}|ttl={payload.expires_in_seconds}"\n    short_code = generate_code(key)'),
         ('            clicks=0,', '            clicks=0,\n            expires_at=(datetime.now(timezone.utc) + timedelta(seconds=payload.expires_in_seconds)\n                        if payload.expires_in_seconds is not None else None),'),
         ('    record.clicks += 1', '    if record.expires_at is not None and datetime.now(timezone.utc) >= record.expires_at:\n        raise HTTPException(status_code=410, detail="Short URL expired")\n\n    record.clicks += 1'),
