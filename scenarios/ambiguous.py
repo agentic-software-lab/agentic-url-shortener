@@ -14,6 +14,8 @@ from agents.generation import implementation_agent, testing_agent, documentation
 def ambiguity_resolution_agent(context: WorkflowContext) -> None:
     if "clarification" not in context.artifacts:
         raise ValueError("Clarification choices must be supplied before approval")
+    from agents.requirements import requirements_agent
+    requirements_agent(context)
     original = context.requirement
     assumptions = {
         "expiration": "not enabled by default",
@@ -27,12 +29,6 @@ def ambiguity_resolution_agent(context: WorkflowContext) -> None:
         "What analytics granularity is expected?",
     ]
     context.artifacts["assumptions"] = assumptions
-    context.artifacts["normalized_requirement"] = (
-        "Build a URL shortener with stable redirects; "
-        + ("include aggregate click analytics; " if context.artifacts["clarification"]["analytics"] else "exclude analytics; ")
-        +
-        "do not add expiration or custom aliases in the first release."
-    )
     context.decisions.append(f"Clarified ambiguous request: {original!r}")
     context.decisions.append(f"Assumptions adopted: {assumptions}")
 
@@ -40,7 +36,7 @@ def ambiguity_resolution_agent(context: WorkflowContext) -> None:
 def build_engine() -> WorkflowEngine:
     return WorkflowEngine(
         [
-            Node("requirements", requirements_agent),
+            Node("requirements", lambda context: context.artifacts.update({"original_requirement": context.requirement})),
             Node("clarify", ambiguity_resolution_agent, {"requirements"}, requires_human_approval=True),
             Node("architecture", architecture_agent, {"clarify"}),
             Node("security", security_agent, {"clarify"}),

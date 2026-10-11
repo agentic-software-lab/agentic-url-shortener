@@ -5,12 +5,7 @@ from urllib.parse import urlparse
 from orchestrator.engine import WorkflowContext
 
 
-def requirements_agent(context: WorkflowContext) -> None:
-    requirement = context.requirement.strip()
-    if not requirement:
-        raise ValueError("Requirement cannot be empty")
-    context.artifacts["normalized_requirement"] = requirement
-    context.decisions.append("Normalized the input into an explicit engineering requirement.")
+from agents.requirements import requirements_agent
 
 
 def architecture_agent(context: WorkflowContext) -> None:
@@ -18,7 +13,7 @@ def architecture_agent(context: WorkflowContext) -> None:
         "api": "FastAPI",
         "storage": "in-memory prototype with repository boundary for future DB",
         "short_code": "deterministic SHA-256 prefix",
-        "analytics": "click counter",
+        "analytics": "click counter" if context.artifacts.get("requirement_plan", {}).get("analytics", True) else "excluded",
     }
     context.decisions.append("Kept infrastructure lightweight while preserving service boundaries.")
 

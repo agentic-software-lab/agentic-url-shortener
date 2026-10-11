@@ -151,3 +151,16 @@ def test_summary_distinguishes_pending_and_reviewed_candidate():
     assert report['review_ready'] is False
     assert report['approvals'] == []
     assert report['prior_revision_count'] == 1
+
+
+def test_requirement_drives_generated_analytics_scope():
+    for wording, enabled in [('with analytics',True),('without analytics',False)]:
+        key = client.post('/workflows',json={'requirement':'Build URL shortener '+wording}).json()['workflow_id']
+        data = client.post(f'/workflows/{key}/approvals/implementation').json()
+        assert data['artifacts']['requirement_plan']['analytics'] is enabled
+        source = data['artifacts']['generated_files']['main.py']
+        assert ("@app.get('/urls/{code}/analytics')" in source) is enabled
+        assert data['artifacts']['validation']['exit_code'] == 0
+    failed = client.post('/workflows',json={'requirement':'Build URL shortener with custom aliases'}).json()
+    assert failed['status'] == 'failed'
+    assert failed['nodes']['implementation'] == 'blocked'

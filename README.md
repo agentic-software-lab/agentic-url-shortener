@@ -684,3 +684,12 @@ Use `GET /workflows/{workflow_id}/summary` to review the current revision's requ
 `review_ready` becomes true only when all stages have succeeded and real validation reports exit code 0. Pending, failed, or replanned candidates remain false. Approval history in this report is limited to the current revision; prior candidates are retained in workflow history.
 
 The response is a review report, not evidence of deployment or production readiness. Swagger offers a Download action for the JSON response.
+
+
+## Requirement Understanding and Decomposition
+
+The bounded planner in `agents/requirements.py` interprets URL-shortener scope, normalizes the requirement, and produces `artifacts.requirement_plan`, `artifacts.tasks`, and `artifacts.acceptance_criteria`. Tasks include dependency IDs, expected outputs, and acceptance-criterion links.
+
+Compare `Build a URL shortener with analytics` with `Build a URL shortener without analytics`: the plan changes, and the candidate includes or excludes the analytics endpoint accordingly. Ambiguous scope such as “useful” or “production ready” requires the ambiguous scenario and explicit clarification. Unsupported domains and recognized unsupported capabilities stop the workflow; rejection reasons appear in audit events.
+
+The scaffold supports HTTP/HTTPS links, deterministic codes, HTTP 307 redirects, and optional aggregate analytics. Expiration changes use the separate brownfield adapter. Interpretation uses explicit vocabulary and negation rules, not a general semantic parser; unknown phrasing can be missed. Capability expansion, broader requirement reasoning, and automated acceptance-to-test coverage mapping remain future work.

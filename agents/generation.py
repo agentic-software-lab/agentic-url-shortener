@@ -58,7 +58,7 @@ def test_health_validation_and_missing():
 
 
 def implementation_agent(context):
-    options = context.artifacts.get('clarification', {'analytics':True})
+    options = context.artifacts.get('requirement_plan', context.artifacts.get('clarification', {'analytics':True}))
     source = SOURCE + (ANALYTICS if options['analytics'] else '')
     tests = TESTS + ('''\ndef test_analytics():
     code = client.post('/urls',json={'url':'https://example.com/path'}).json()['short_code']
@@ -90,7 +90,7 @@ def testing_agent(context):
 
 
 def documentation_agent(context):
-    options = context.artifacts.get('clarification', {'analytics':True})
+    options = context.artifacts.get('requirement_plan', context.artifacts.get('clarification', {'analytics':True}))
     text = '# Generated URL Shortener\n\nRun: python3 -m uvicorn main:app --port 8002\nTest: python3 -m pytest -q\n\nScope: HTTP/HTTPS URLs, deterministic mappings, HTTP 307 redirects.\nAnalytics: '+str(options['analytics'])+'\nNo expiration or custom aliases. In-memory data resets on restart.\n'
     (Path(context.artifacts['workspace'])/'README.md').write_text(text)
     context.artifacts['documentation'] = text
