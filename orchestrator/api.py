@@ -164,3 +164,58 @@ def replan(workflow_id: str, payload: WorkflowRequest):
         engine.execute(context)
         workflows[workflow_id] = (engine, context)
         return snapshot(workflow_id, engine, context)
+
+
+@app.get('/workflows/{workflow_id}/summary')
+def engineering_summary(workflow_id: str):
+    """Review report derived from actual workflow state, not a success claim."""
+    with lock:
+        engine, context = lookup(workflow_id)
+        state = snapshot(workflow_id, engine, context)
+        artifacts = context.artifacts
+        # Only approvals from this revision are relevant to its candidate.
+        boundary = max((i for i, event in enumerate(context.audit_log)
+                        if event.startswith('replan_requested:')), default=-1)
+        current_events = context.audit_log[boundary + 1:]
+        validation = artifacts.get('validation')
+        generated = artifacts.get('generated_files', {})
+        limitations = [
+            'Deterministic bounded adapters; no general LLM code generation.',
+            'Workflow state and audit history are in memory and clear on restart.',
+            'Release approval marks review readiness; it does not deploy or merge changes.',
+            'Static policy checks are not a sandbox or compliance certification.',
+            'Replanning rebuilds the full supported graph; compensation is opt-in per node.',
+        ]
+        return {
+            'workflow_id': workflow_id,
+            'revision': context.revision,
+            'status': state['status'],
+            'review_ready': state['status'] == 'succeeded' and validation is not None
+                            and validation.get('exit_code') == 0,
+            'requirement': context.requirement,
+            'plan': artifacts.get('tasks', artifacts.get('implementation_plan', [])),
+            'rationale': context.decisions,
+            'assumptions': artifacts.get('assumptions', {}),
+            'clarification': artifacts.get('clarification'),
+            'artifacts': {
+                'workspace': artifacts.get('workspace'),
+                'generated_file_names': list(generated),
+                'impacted_modules': artifacts.get('impacted_modules', []),
+                'diff': artifacts.get('diff'),
+                'documentation': artifacts.get('documentation'),
+            },
+            'validation': validation,
+            'policy_validation': artifacts.get('policy_validation'),
+            'approvals': [event.split(':', 1)[1] for event in current_events
+                          if event.startswith('human_approved:')],
+            'pending_approvals': state['pending_approvals'],
+            'risks_and_tradeoffs': [
+                'In-memory URL data is lost on restart and is not shared across workers.',
+                'Short codes use a truncated deterministic hash; collisions need production handling.',
+                'Candidate tests exercise the supported scope, not production load or durability.',
+                'Temporary candidate workspaces remain on disk until manually removed.',
+            ],
+            'limitations': limitations,
+            'metrics': context.metrics,
+            'prior_revision_count': len(context.history),
+        }

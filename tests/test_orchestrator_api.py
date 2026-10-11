@@ -126,3 +126,28 @@ def test_invalid_replan_preserves_existing_workflow():
     assert client.post(f'/workflows/{key}/replan', json={
         'scenario':'brownfield_expiration', 'requirement':'Add custom aliases'}).status_code == 422
     assert client.get(f'/workflows/{key}').json()['revision'] == 1
+
+
+def test_summary_distinguishes_pending_and_reviewed_candidate():
+    key = client.post('/workflows',json={'requirement':'Build short links'}).json()['workflow_id']
+    report = client.get(f'/workflows/{key}/summary').json()
+    assert report['review_ready'] is False
+    assert report['validation'] is None
+    assert report['pending_approvals'] == ['implementation']
+    client.post(f'/workflows/{key}/approvals/implementation')
+    report = client.get(f'/workflows/{key}/summary').json()
+    assert report['validation']['exit_code'] == 0
+    assert report['review_ready'] is False
+    assert 'main.py' in report['artifacts']['generated_file_names']
+    client.post(f'/workflows/{key}/approvals/release')
+    report = client.get(f'/workflows/{key}/summary').json()
+    assert report['review_ready'] is True
+    assert report['approvals'] == ['implementation','release']
+    assert report['policy_validation']['status'] == 'passed'
+    assert report['limitations']
+    assert client.get('/workflows/missing/summary').status_code == 404
+    client.post(f'/workflows/{key}/replan',json={'requirement':'Build revised short links'})
+    report = client.get(f'/workflows/{key}/summary').json()
+    assert report['review_ready'] is False
+    assert report['approvals'] == []
+    assert report['prior_revision_count'] == 1

@@ -666,3 +666,12 @@ Workflow construction rejects duplicate nodes, missing dependencies, cycles, and
 Before candidate tests run, the greenfield, ambiguous, and brownfield-expiration adapters parse candidate application and test sources with an AST policy. Allowed import roots are explicitly listed in `agents/policy.py`; direct dynamic execution calls, file-opening calls, relative imports, and dunder introspection are rejected. Successful results appear in `artifacts.policy_validation`; rejections are recorded in audit events and block release.
 
 This is a defensive check for trusted deterministic adapters, not a security sandbox or a compliance certification. It does not prove arbitrary Python safe, inspect every dependency, or enforce organization-specific legal policies. Authentication, durable audit storage, process isolation, and role-based approval permissions remain future work.
+
+
+## Final Engineering Summary
+
+Use `GET /workflows/{workflow_id}/summary` to review the current revision's requirement, plan, rationale, assumptions, generated artifacts and diff, test results, policy checks, approval history, metrics, risks, and limitations.
+
+`review_ready` becomes true only when all stages have succeeded and real validation reports exit code 0. Pending, failed, or replanned candidates remain false. Approval history in this report is limited to the current revision; prior candidates are retained in workflow history.
+
+The response is a review report, not evidence of deployment or production readiness. Swagger offers a Download action for the JSON response.
