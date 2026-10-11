@@ -552,30 +552,9 @@ agentic-url-shortener/
 
 ---
 
-## Limitations and Next Steps
+## Current Scope and Future Improvements
 
-The current prototype demonstrates:
-
-- dependency-aware execution
-- bounded retries
-- human approval gates
-- safe-stop behavior
-- blocked downstream dependencies after failure
-- decision lineage
-- audit logs
-- latency and success metrics
-
-The URL store is in memory, so URL data does not persist across restarts. Architecture and security stages are described as conceptually parallel; the workflow documentation does not establish concurrent execution.
-
-Production improvements would include:
-
-- persistent storage
-- distributed locking
-- authentication/authorization
-- rate limiting
-- idempotency keys
-- structured logging
-- OpenTelemetry tracing
-- external metrics backend
-- registered rollback/compensation actions
-- CI/CD deployment gates
+- **Storage:** URL data is stored in memory and resets on restart; persistent storage is a future improvement.
+- **Agents:** Agents use predefined logic to produce plans and workflow artifacts; LLM integration is a future enhancement.
+- **Approvals:** The engine pauses at approval gates, while demo scripts supply approvals automatically; an interactive approval interface is planned.
+- **Orchestrator service:** Workflows currently run through scenario commands; a separate API on port 8001 is planned.
