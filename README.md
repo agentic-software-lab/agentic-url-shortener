@@ -6,7 +6,7 @@ Human approval gates, bounded retries, and audit logs keep the workflow controll
 ## Modules
 
 - **URL Shortener (port 8000):** FastAPI service for creating short URLs, redirects, and click analytics.
-- **Orchestrator (planned port 8001; currently run via scenarios):** Agentic SDLC orchestration engine for dependency-aware workflows, human approval gates, bounded retries, and audit trails.
+- **Orchestrator (port 8001):** Agentic SDLC orchestration engine for dependency-aware workflows, human approval gates, bounded retries, and audit trails.
 - **Docs/Scenarios:** Architecture documentation and runnable greenfield, brownfield, and ambiguous-requirement workflow examples.
 
 ---
@@ -58,7 +58,7 @@ Windows:
 python3 -m pip install -r requirements.txt
 ```
 
-### 4. Start the API
+### 4. Start the URL Shortener API
 
 ```bash
 uvicorn backend.main:app --reload --port 8000
@@ -75,6 +75,30 @@ Swagger documentation:
 ```text
 http://127.0.0.1:8000/docs
 ```
+
+
+### 5. Start the Orchestrator in a second terminal
+
+Activate the same virtual environment from the repository folder, then run:
+
+```bash
+source .venv/bin/activate
+python3 -m uvicorn orchestrator.api:app --reload --port 8001
+```
+
+Open [Orchestrator Swagger UI](http://127.0.0.1:8001/docs). Create a workflow with `POST /workflows` and a JSON body such as `{"requirement": "Build a URL shortener with analytics"}`. Copy its `workflow_id`, then approve `implementation` followed by `release` using the approval endpoint. Each approval resumes eligible stages.
+
+| Method | Orchestrator endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/health` | Check service health. |
+| POST | `/workflows` | Create and execute a workflow until approval or failure. |
+| GET | `/workflows` | List workflows. |
+| GET | `/workflows/{workflow_id}` | Inspect status, artifacts, and pending approvals. |
+| POST | `/workflows/{workflow_id}/approvals/{node_name}` | Approve a waiting node and resume execution. |
+| GET | `/workflows/{workflow_id}/events` | Read audit events. |
+| GET | `/workflows/{workflow_id}/metrics` | Read workflow metrics. |
+
+The API currently uses the greenfield workflow. Brownfield and ambiguous scenarios remain available through their scenario commands.
 
 ---
 
@@ -529,6 +553,7 @@ agentic-url-shortener/
 |   +-- main.py
 |
 +-- orchestrator/
+|   +-- api.py
 |   +-- engine.py
 |
 +-- agents/
@@ -542,6 +567,7 @@ agentic-url-shortener/
 +-- tests/
 |   +-- test_api.py
 |   +-- test_orchestrator.py
+|   +-- test_orchestrator_api.py
 |
 +-- docs/
 |   +-- architecture.md
@@ -556,5 +582,6 @@ agentic-url-shortener/
 
 - **Storage:** URL data is stored in memory and resets on restart; persistent storage is a future improvement.
 - **Agents:** Agents use predefined logic to produce plans and workflow artifacts; LLM integration is a future enhancement.
-- **Approvals:** The engine pauses at approval gates, while demo scripts supply approvals automatically; an interactive approval interface is planned.
-- **Orchestrator service:** Workflows currently run through scenario commands; a separate API on port 8001 is planned.
+- **Approvals:** The API waits for explicit approval requests. Scenario scripts supply approvals automatically for demonstrations.
+- **Orchestrator service:** The API on port 8001 stores workflow state in memory. Use one worker; restarting the service clears workflows. Authentication and durable workflow storage are future improvements.
+- **Metrics:** `end_to_end_latency_ms` currently measures the latest execution call, and `success_rate` is the fraction of completed nodes.
