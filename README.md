@@ -61,7 +61,7 @@ python3 -m pip install -r requirements.txt
 ### 4. Start the URL Shortener API
 
 ```bash
-uvicorn backend.main:app --reload --port 8000
+python3 -m uvicorn backend.main:app --reload --port 8000
 ```
 
 The API will run at:
@@ -97,6 +97,9 @@ Open [Orchestrator Swagger UI](http://127.0.0.1:8001/docs). Create a workflow wi
 | POST | `/workflows/{workflow_id}/approvals/{node_name}` | Approve a waiting node and resume execution. |
 | GET | `/workflows/{workflow_id}/events` | Read audit events. |
 | GET | `/workflows/{workflow_id}/metrics` | Read workflow metrics. |
+| POST | `/workflows/{workflow_id}/clarification` | Submit ambiguous-scope choices. |
+| POST | `/workflows/{workflow_id}/replan` | Revise requirement and invalidate the candidate. |
+| GET | `/workflows/{workflow_id}/summary` | Review the final engineering report. |
 
 ### Review a real brownfield change
 
@@ -116,7 +119,7 @@ Create a workflow in Swagger with:
 
 The generated feature adds optional `expires_in_seconds`, preserves non-expiring links, and returns HTTP 410 for expired redirects. The adapter inspects the current Python AST and uses bounded deterministic edit rules; unsupported code shapes stop for manual replanning. It is not an LLM-powered general coding agent. Temporary candidate directories require manual cleanup when no longer needed.
 
-Omit `scenario` to use the original greenfield demonstration. Brownfield analytics and ambiguous demonstrations remain available through scenario commands.
+Omit `scenario` for greenfield generation, or use `ambiguous` for explicit clarification. All three CLI scenarios generate reviewable candidates and execute tests.
 
 ---
 
@@ -164,6 +167,9 @@ Tests currently validate:
 - 404 behavior
 - human approval gates
 - bounded retries
+- parallel branch synchronization and artifact conflicts
+- generated code validation and policy rejection
+- fallback, compensation, replanning, metrics, and final summaries
 
 ---
 
@@ -515,12 +521,10 @@ scenarios/brownfield.py
 Scenario:
 
 ```text
-Add analytics to an existing URL shortener without breaking redirects.
+Add optional link expiration to an existing URL shortener without breaking redirects.
 ```
 
-The workflow first identifies impacted modules and treats the task as a change to an existing system rather than a greenfield build.
-
-This demonstrates codebase reasoning and regression awareness.
+The adapter inspects the existing API's Python AST, prepares a bounded expiration diff in an isolated workspace, and executes regression and generated expiration tests before release approval.
 
 ### Ambiguous Requirement
 
@@ -596,16 +600,21 @@ agentic-url-shortener/
 |
 +-- agents/
 |   +-- core.py
+|   +-- generation.py
+|   +-- expiration.py
+|   +-- policy.py
 |
 +-- scenarios/
 |   +-- greenfield.py
 |   +-- brownfield.py
 |   +-- ambiguous.py
+|   +-- recovery.py
 |
 +-- tests/
 |   +-- test_api.py
 |   +-- test_orchestrator.py
 |   +-- test_orchestrator_api.py
+|   +-- test_policy.py
 |
 +-- docs/
 |   +-- architecture.md
