@@ -53,5 +53,8 @@ def test_real_brownfield_change_and_validation():
     assert result['pending_approvals'] == ['release']
     assert result['artifacts']['validation']['exit_code'] == 0
     assert 'expires_at' in result['artifacts']['diff']
+    assert 'Optional[int]' in result['artifacts']['diff']
+    assert 'Optional[datetime]' in result['artifacts']['diff']
+    assert 'int | None' not in result['artifacts']['diff']
     assert 'test_expiration.py' in result['artifacts']['diff']
     assert client.post(f'/workflows/{key}/approvals/release').json()['status'] == 'succeeded'
