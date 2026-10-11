@@ -1,4 +1,10 @@
-# Agentic URL Shortener
+# Agentic Software Engineering System
+
+## Modules
+
+- **URL Shortener (port 8000):** FastAPI service for creating short URLs, redirects, and click analytics.
+- **Orchestrator (port 8001):** Agentic SDLC orchestration engine for dependency-aware workflows, human approval gates, bounded retries, and audit trails.
+- **Docs/Scenarios:** Architecture documentation and runnable greenfield, brownfield, and ambiguous-requirement workflow examples.
 
 Agentic URL shortener demonstrating multi-agent SDLC orchestration, validation, observability, and controlled autonomy.
 
@@ -420,7 +426,7 @@ Returns:
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/AishwaryaKalmangi2026/agentic-url-shortener.git
+git clone https://github.com/agentic-software-lab/agentic-url-shortener.git
 cd agentic-url-shortener
 ```
 
