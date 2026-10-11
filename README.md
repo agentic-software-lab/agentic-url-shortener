@@ -119,6 +119,88 @@ Tests currently validate:
 
 ---
 
+## API Endpoints
+
+| Method | Endpoint | Purpose |
+| --- | --- | --- |
+| GET | `/health` | Check service health. |
+| POST | `/urls` | Create a short URL. |
+| GET | `/r/{short_code}` | Redirect to the original URL and count the click. |
+| GET | `/urls/{short_code}/analytics` | Retrieve URL details and click count. |
+
+### Health Check
+
+```http
+GET /health
+```
+
+### Create Short URL
+
+```http
+POST /urls
+```
+
+Example request:
+
+```json
+{
+  "url": "https://example.com/some/long/path"
+}
+```
+
+### Redirect
+
+```http
+GET /r/{short_code}
+```
+
+Returns a `307` redirect to the original URL and increments the click counter.
+
+### Analytics
+
+```http
+GET /urls/{short_code}/analytics
+```
+
+Returns:
+
+```json
+{
+  "short_code": "abcd1234",
+  "original_url": "https://example.com/some/long/path",
+  "created_at": "2026-10-10T12:00:00Z",
+  "clicks": 3
+}
+```
+
+---
+
+## Try the API
+
+Create a URL:
+
+```bash
+curl -X POST http://127.0.0.1:8000/urls \
+  -H "Content-Type: application/json" \
+  -d '{"url":"https://example.com/long/path"}'
+```
+
+Copy the returned `short_code`.
+
+Open the short URL:
+
+```bash
+curl -i http://127.0.0.1:8000/r/<short_code>
+```
+
+Check analytics:
+
+```bash
+curl http://127.0.0.1:8000/urls/<short_code>/analytics
+```
+
+---
+
 ## High-Level Architecture
 
 ```text
@@ -402,38 +484,6 @@ The workflow records assumptions and pauses at a human approval checkpoint befor
 
 ---
 
-## Repository Structure
-
-```text
-agentic-url-shortener/
-|
-+-- backend/
-|   +-- main.py
-|
-+-- orchestrator/
-|   +-- engine.py
-|
-+-- agents/
-|   +-- core.py
-|
-+-- scenarios/
-|   +-- greenfield.py
-|   +-- brownfield.py
-|   +-- ambiguous.py
-|
-+-- tests/
-|   +-- test_api.py
-|   +-- test_orchestrator.py
-|
-+-- docs/
-|   +-- architecture.md
-|
-+-- requirements.txt
-+-- README.md
-```
-
----
-
 ## URL Shortener Flow
 
 ```text
@@ -470,82 +520,39 @@ The prototype uses an in-memory store to keep the focus on orchestration and eng
 
 ---
 
-## Try the API
+## Repository Structure
 
-Create a URL:
-
-```bash
-curl -X POST http://127.0.0.1:8000/urls \
-  -H "Content-Type: application/json" \
-  -d '{"url":"https://example.com/long/path"}'
-```
-
-Copy the returned `short_code`.
-
-Open the short URL:
-
-```bash
-curl -i http://127.0.0.1:8000/r/<short_code>
-```
-
-Check analytics:
-
-```bash
-curl http://127.0.0.1:8000/urls/<short_code>/analytics
-```
-
----
-
-## API Endpoints
-
-### Health Check
-
-```http
-GET /health
-```
-
-### Create Short URL
-
-```http
-POST /urls
-```
-
-Example request:
-
-```json
-{
-  "url": "https://example.com/some/long/path"
-}
-```
-
-### Redirect
-
-```http
-GET /r/{short_code}
-```
-
-Returns a `307` redirect to the original URL and increments the click counter.
-
-### Analytics
-
-```http
-GET /urls/{short_code}/analytics
-```
-
-Returns:
-
-```json
-{
-  "short_code": "abcd1234",
-  "original_url": "https://example.com/some/long/path",
-  "created_at": "2026-10-10T12:00:00Z",
-  "clicks": 3
-}
+```text
+agentic-url-shortener/
+|
++-- backend/
+|   +-- main.py
+|
++-- orchestrator/
+|   +-- engine.py
+|
++-- agents/
+|   +-- core.py
+|
++-- scenarios/
+|   +-- greenfield.py
+|   +-- brownfield.py
+|   +-- ambiguous.py
+|
++-- tests/
+|   +-- test_api.py
+|   +-- test_orchestrator.py
+|
++-- docs/
+|   +-- architecture.md
+|
++-- requirements.txt
++-- README.md
 ```
 
 ---
 
-## Reliability and Safety Controls
+## Limitations and Next Steps
 
 The current prototype demonstrates:
 
@@ -558,7 +565,9 @@ The current prototype demonstrates:
 - audit logs
 - latency and success metrics
 
-A full production implementation would additionally introduce:
+The URL store is in memory, so URL data does not persist across restarts. Architecture and security stages are described as conceptually parallel; the workflow documentation does not establish concurrent execution.
+
+Production improvements would include:
 
 - persistent storage
 - distributed locking
