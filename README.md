@@ -657,3 +657,12 @@ This is a full graph rebuild using supported deterministic scenario builders, no
 | `mttr_ms` | Mean time from a recovered node's first failure to successful context merge; omitted when there are no recovered nodes. |
 
 Metrics are per workflow revision and update after execute calls. Replanning begins new measurements and preserves prior metrics in history. MTTR here describes stage recovery, not production incident recovery. Aggregate success rates and retry/rollback frequencies across workflows are not yet computed.
+
+
+## Policy Guardrails
+
+Workflow construction rejects duplicate nodes, missing dependencies, cycles, and negative retry budgets. Approval gates and failed dependencies prevent unauthorized downstream execution.
+
+Before candidate tests run, the greenfield, ambiguous, and brownfield-expiration adapters parse candidate application and test sources with an AST policy. Allowed import roots are explicitly listed in `agents/policy.py`; direct dynamic execution calls, file-opening calls, relative imports, and dunder introspection are rejected. Successful results appear in `artifacts.policy_validation`; rejections are recorded in audit events and block release.
+
+This is a defensive check for trusted deterministic adapters, not a security sandbox or a compliance certification. It does not prove arbitrary Python safe, inspect every dependency, or enforce organization-specific legal policies. Authentication, durable audit storage, process isolation, and role-based approval permissions remain future work.

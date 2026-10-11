@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from agents.policy import validate_sources
 
 SOURCE = '''from datetime import datetime, timezone
 from hashlib import sha256
@@ -76,6 +77,13 @@ def implementation_agent(context):
 
 
 def testing_agent(context):
+    workspace = Path(context.artifacts['workspace'])
+    try:
+        context.artifacts['policy_validation'] = validate_sources({name:(workspace/name).read_text() for name in ['main.py','test_generated.py']})
+    except (ValueError, SyntaxError) as exc:
+        context.artifacts['policy_validation'] = {'status':'failed','reason':str(exc)}
+        context.audit_log.append('policy_rejected:' + str(exc))
+        raise
     result = subprocess.run([sys.executable,'-m','pytest','-q'], cwd=context.artifacts['workspace'], capture_output=True,text=True,timeout=60)
     context.artifacts['validation'] = {'command':'python3 -m pytest -q','exit_code':result.returncode,'output':(result.stdout+result.stderr)[-12000:]}
     if result.returncode: raise RuntimeError('Generated application failed validation')

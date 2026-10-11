@@ -49,7 +49,24 @@ class Node:
 
 class WorkflowEngine:
     def __init__(self, nodes: Iterable[Node]) -> None:
-        self.nodes = {node.name: node for node in nodes}
+        items = list(nodes)
+        self.nodes = {node.name: node for node in items}
+        if len(self.nodes) != len(items):
+            raise ValueError('Duplicate workflow node names')
+        for node in items:
+            if not node.name or node.max_retries < 0:
+                raise ValueError('Node names must be non-empty and retries non-negative')
+            missing = node.dependencies - self.nodes.keys()
+            if missing:
+                raise ValueError(f'Unknown dependencies for {node.name}: {sorted(missing)}')
+        remaining = set(self.nodes)
+        resolved = set()
+        while remaining:
+            ready = {name for name in remaining if self.nodes[name].dependencies <= resolved}
+            if not ready:
+                raise ValueError('Workflow dependency graph contains a cycle')
+            resolved.update(ready)
+            remaining -= ready
         self._started: Optional[float] = None
         self._finished: Optional[float] = None
         self._active_ms = 0.0
