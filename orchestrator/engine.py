@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
+from orchestrator.observability import artifact_digest, utc_timestamp
 from time import perf_counter
 from typing import Callable, Dict, Iterable, List, Optional, Set
 
@@ -26,6 +27,39 @@ class WorkflowContext:
     metrics: Dict[str, float] = field(default_factory=dict)
     revision: int = 1
     history: List[Dict[str, object]] = field(default_factory=list)
+    audit_events: List[Dict[str, object]] = field(default_factory=list)
+    task_runs: List[Dict[str, object]] = field(default_factory=list)
+    artifact_lineage: Dict[str, Dict[str, object]] = field(default_factory=dict)
+    _active_task: Optional[str] = field(default=None, repr=False)
+    _active_attempt: Optional[int] = field(default=None, repr=False)
+
+    def record_event(self, message, *, task_id=None, attempt=None, actor="system", details=None):
+        event = {"sequence": len(self.audit_events) + 1, "timestamp": utc_timestamp(),
+                 "revision": self.revision, "event_type": message.split(":", 1)[0],
+                 "task_id": task_id if task_id is not None else self._active_task,
+                 "attempt": attempt if attempt is not None else self._active_attempt,
+                 "actor": actor, "message": message, "details": deepcopy(details or {})}
+        self.audit_log.append(message)
+        self.audit_events.append(event)
+        return event
+
+    def merge_worker_events(self, worker, baseline):
+        # Worker sequences are local; assign authoritative order on ingestion.
+        # Preserve occurrence timestamps and source revision from each worker.
+        events = iter(worker.audit_events[len(baseline.audit_events):])
+        pending = next(events, None)
+        for message in worker.audit_log[len(baseline.audit_log):]:
+            if pending is not None and pending["message"] == message:
+                event = deepcopy(pending)
+                event["sequence"] = len(self.audit_events) + 1
+                self.audit_events.append(event)
+                self.audit_log.append(message)
+                pending = next(events, None)
+            else:
+                # Backward-compatible adapters may still append plain strings.
+                self.record_event(message, task_id=worker._active_task,
+                                  attempt=worker._active_attempt)
+
 
 
 @dataclass
@@ -98,7 +132,8 @@ class WorkflowEngine:
 
     def apply_replan(self, request, context):
         """Validate a candidate graph before committing any runtime mutation."""
-        context.audit_log.append(f"replan_requested:{request.source}:{request.reason}")
+        context.record_event(f"replan_requested:{request.source}:{request.reason}",
+            task_id=request.source, details={"reason": request.reason})
         try:
             if self.safe_stopped or self._replans >= self.max_replans:
                 raise ValueError("Replanning budget exhausted or workflow stopped")
@@ -150,8 +185,9 @@ class WorkflowEngine:
                 raise ValueError("New work must be downstream of its source")
         except (ValueError, TypeError, AttributeError) as exc:
             self.safe_stopped = True
-            context.audit_log.append(f"replan_rejected:{exc}")
-            context.audit_log.append("safe_stop:replan")
+            context.record_event(f"replan_rejected:{exc}", task_id=request.source,
+                details={"reason": request.reason, "error": str(exc)})
+            context.record_event("safe_stop:replan", task_id=request.source)
             for node in self.nodes.values():
                 if node.status != NodeStatus.SUCCEEDED and node.status != NodeStatus.FAILED:
                     node.status = NodeStatus.BLOCKED
@@ -165,7 +201,9 @@ class WorkflowEngine:
             "reason": request.reason, "added": [n.name for n in request.add_tasks],
             "modified": [n.name for n in request.modify_tasks], "preserved": preserved,
             "before": before, "after": self.plan()})
-        context.audit_log.append(f"replan_completed:revision={context.revision}:changed={','.join(changed)}")
+        context.record_event(f"replan_completed:revision={context.revision}:changed={','.join(changed)}",
+            task_id=request.source, details={"reason": request.reason, "added": [n.name for n in request.add_tasks],
+                "modified": [n.name for n in request.modify_tasks], "preserved": preserved})
         return True
 
     def _dependencies_succeeded(self, node: Node) -> bool:
@@ -177,7 +215,7 @@ class WorkflowEngine:
             raise ValueError(f"{node_name} is not waiting for approval")
         node.requires_human_approval = False
         node.status = NodeStatus.PENDING
-        context.audit_log.append(f"human_approved:{node_name}")
+        context.record_event(f"human_approved:{node_name}", task_id=node_name, actor="human")
 
     def execute(self, context: WorkflowContext) -> WorkflowContext:
         started = perf_counter()
@@ -194,7 +232,7 @@ class WorkflowEngine:
                         continue
                     if node.requires_human_approval:
                         node.status = NodeStatus.WAITING_APPROVAL
-                        context.audit_log.append(f"approval_required:{node.name}")
+                        context.record_event(f"approval_required:{node.name}", task_id=node.name)
                         continue
                     ready.append(node)
                 if not ready:
@@ -206,8 +244,13 @@ class WorkflowEngine:
                 for node in ready:
                     node.status = NodeStatus.RUNNING
                     node.attempts += 1
-                    context.audit_log.append(f"start:{node.name}:attempt={node.attempts}")
+                    start_event = context.record_event(f"start:{node.name}:attempt={node.attempts}",
+                        task_id=node.name, attempt=node.attempts,
+                        details={"dependencies": sorted(node.dependencies)})
                     worker_context = deepcopy(baseline)
+                    worker_context._active_task = node.name
+                    worker_context._active_attempt = node.attempts
+                    worker_context._start_event = start_event
                     futures.append((node, worker_context, pool.submit(self._run_attempt, node, worker_context)))
 
                 # Synchronize the whole wave before scheduling dependent stages.
@@ -229,33 +272,42 @@ class WorkflowEngine:
                                 raise ValueError(f"Concurrent artifact conflict: {key}")
                         context.artifacts.update(updates)
                         context.decisions.extend(worker_context.decisions[len(baseline.decisions):])
-                        context.audit_log.extend(worker_context.audit_log[len(baseline.audit_log):])
+                        context.merge_worker_events(worker_context, baseline)
                         if node.failure_started is not None and node.recovery_ms is None:
                             node.recovery_ms = (perf_counter() - node.failure_started) * 1000
                         node.status = NodeStatus.SUCCEEDED
-                        context.audit_log.append(f"success:{node.name}")
+                        event = context.record_event(f"success:{node.name}", task_id=node.name,
+                            attempt=node.attempts, details={"artifact_keys": sorted(updates)})
+                        self._record_task_run(context, baseline, worker_context, node, event, updates)
                         if isinstance(result, ReplanRequest):
                             requests.append(result)
                     except Exception as exc:
-                        context.audit_log.extend(worker_context.audit_log[len(baseline.audit_log):])
+                        context.merge_worker_events(worker_context, baseline)
                         if node.failure_started is None:
                             node.failure_started = perf_counter()
-                        context.audit_log.append(f"failure:{node.name}:{type(exc).__name__}")
+                        event = context.record_event(f"failure:{node.name}:{type(exc).__name__}",
+                            task_id=node.name, attempt=node.attempts,
+                            details={"error_type": type(exc).__name__})
+                        self._record_task_run(context, baseline, worker_context, node, event, {})
                         if node.attempts <= node.max_retries:
                             node.status = NodeStatus.PENDING
-                            context.audit_log.append(f"retry_scheduled:{node.name}")
+                            context.record_event(f"retry_scheduled:{node.name}", task_id=node.name, attempt=node.attempts)
                         else:
                             node.status = NodeStatus.FAILED
                             if node.rollback is not None and not node.rollback_attempted:
                                 node.rollback_attempted = True
-                                context.audit_log.append(f"rollback_started:{node.name}")
+                                context.record_event(f"rollback_started:{node.name}", task_id=node.name, attempt=node.attempts)
+                                compensation_baseline = deepcopy(worker_context)
                                 try:
                                     node.rollback(worker_context)
                                     node.rollback_succeeded = True
-                                    context.audit_log.append(f"rollback_succeeded:{node.name}")
                                 except Exception as rollback_exc:
-                                    context.audit_log.append(f"rollback_failed:{node.name}:{type(rollback_exc).__name__}")
-                            context.audit_log.append(f"safe_stop:{node.name}")
+                                    context.merge_worker_events(worker_context, compensation_baseline)
+                                    context.record_event(f"rollback_failed:{node.name}:{type(rollback_exc).__name__}", task_id=node.name, attempt=node.attempts)
+                                else:
+                                    context.merge_worker_events(worker_context, compensation_baseline)
+                                    context.record_event(f"rollback_succeeded:{node.name}", task_id=node.name, attempt=node.attempts)
+                            context.record_event(f"safe_stop:{node.name}", task_id=node.name, attempt=node.attempts)
 
                 if self.planner and not self._planned and self.nodes[self.planning_trigger].status == NodeStatus.SUCCEEDED:
                     self._planned = True
@@ -263,10 +315,11 @@ class WorkflowEngine:
                         candidate = self.planner(context, self.nodes)
                         WorkflowEngine(candidate)
                         self.nodes = {n.name: n for n in candidate}
-                        context.audit_log.append("plan_generated:requirement")
+                        context.record_event("plan_generated:requirement",
+                            details={"task_ids": list(self.nodes)})
                     except Exception as exc:
                         self.safe_stopped = True
-                        context.audit_log.append(f"safe_stop:planning:{exc}")
+                        context.record_event(f"safe_stop:planning:{exc}")
                         for n in self.nodes.values():
                             if n.status != NodeStatus.SUCCEEDED:
                                 n.status = NodeStatus.BLOCKED
@@ -296,6 +349,26 @@ class WorkflowEngine:
         context.metrics["workflow_succeeded"] = float(not self.safe_stopped and all(n.status == NodeStatus.SUCCEEDED for n in self.nodes.values()))
         return context
 
+    def _record_task_run(self, context, baseline, worker, node, event, updates):
+        start = worker._start_event
+        run_id = f"run-{start['sequence']}"
+        outputs = {key: {"digest": artifact_digest(value), "task_id": node.name,
+                        "attempt": node.attempts, "revision": event["revision"],
+                        "run_id": run_id, "event_sequence": event["sequence"]}
+                   for key, value in updates.items()}
+        context.task_runs.append({"run_id": run_id, "task_id": node.name,
+            "attempt": node.attempts, "revision": start["revision"],
+            "started_at": start["timestamp"], "finished_at": event["timestamp"],
+            "start_event_sequence": start["sequence"], "end_event_sequence": event["sequence"],
+            "outcome": event["event_type"], "dependencies": sorted(node.dependencies),
+            "available_inputs": {key: {"digest": artifact_digest(value),
+                "producer": deepcopy(baseline.artifact_lineage.get(key))}
+                for key, value in baseline.artifacts.items()},
+            "outputs": outputs,
+            "decisions": worker.decisions[len(baseline.decisions):] if updates or event["event_type"] == "success" else [],
+            "fallback_used": node.fallback_used})
+        context.artifact_lineage.update(outputs)
+
     def _run_attempt(self, node: Node, context: WorkflowContext) -> Optional[ReplanRequest]:
         original = deepcopy(context)
         try:
@@ -306,17 +379,17 @@ class WorkflowEngine:
             if node.attempts <= node.max_retries or node.fallback is None or node.fallback_used:
                 raise
             node.fallback_used = True
-            context.audit_log.append(f"primary_exhausted:{node.name}:{type(exc).__name__}")
-            context.audit_log.append(f"fallback_started:{node.name}")
+            context.record_event(f"primary_exhausted:{node.name}:{type(exc).__name__}")
+            context.record_event(f"fallback_started:{node.name}")
             context.artifacts = original.artifacts
             context.decisions = original.decisions
             try:
                 result = node.fallback(context)
             except Exception as fallback_exc:
-                context.audit_log.append(f"fallback_failed:{node.name}:{type(fallback_exc).__name__}")
+                context.record_event(f"fallback_failed:{node.name}:{type(fallback_exc).__name__}")
                 raise
             node.fallback_succeeded = True
-            context.audit_log.append(f"fallback_succeeded:{node.name}")
+            context.record_event(f"fallback_succeeded:{node.name}")
             return result
 
     def _success_rate(self) -> float:

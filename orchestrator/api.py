@@ -1,5 +1,6 @@
 """In-memory workflow API. Run with one worker to preserve workflow state."""
 from threading import RLock
+from copy import deepcopy
 from typing import Literal
 from uuid import uuid4
 from scenarios.ambiguous import build_engine as build_ambiguous_engine
@@ -98,7 +99,9 @@ def approve_node(workflow_id: str, node_name: str):
 @app.get("/workflows/{workflow_id}/events")
 def events(workflow_id: str):
     with lock:
-        return {"workflow_id": workflow_id, "events": lookup(workflow_id)[1].audit_log}
+        context = lookup(workflow_id)[1]
+        return {"workflow_id": workflow_id, "events": context.audit_log,
+                "records": context.audit_events, "schema_version": 1}
 
 
 @app.get("/workflows/{workflow_id}/metrics")
@@ -119,7 +122,8 @@ def clarify(workflow_id: str, payload: ClarificationRequest):
         if 'clarify' not in engine.nodes or engine.statuses()['clarify'] != 'waiting_approval':
             raise HTTPException(409, 'Workflow is not waiting for clarification')
         context.artifacts['clarification'] = payload.model_dump()
-        context.audit_log.append('clarification_submitted')
+        context.record_event('clarification_submitted', task_id='clarify', actor='human',
+            details=payload.model_dump())
         return snapshot(workflow_id, engine, context)
 
 
@@ -140,7 +144,10 @@ def replan(workflow_id: str, payload: WorkflowRequest):
             'nodes': previous_engine.statuses(),
             'decisions': previous.decisions,
             'artifacts': previous.artifacts,
-            'metrics': previous.metrics,
+            'metrics': deepcopy(previous.metrics),
+            'audit_events': deepcopy(previous.audit_events),
+            'task_runs': deepcopy(previous.task_runs),
+            'artifact_lineage': deepcopy(previous.artifact_lineage),
         }]
         engine = (build_expiration_engine() if payload.scenario == 'brownfield_expiration'
                   else build_ambiguous_engine() if payload.scenario == 'ambiguous'
@@ -154,10 +161,13 @@ def replan(workflow_id: str, payload: WorkflowRequest):
             requires_human_approval=True)
         engine.nodes = {'replan': gate, **engine.nodes}
         context = WorkflowContext(payload.requirement, revision=previous.revision + 1, history=history)
-        context.audit_log = previous.audit_log + [
-            f'replan_requested:revision={context.revision}',
-            f'prior_outputs_invalidated:revision={previous.revision}',
-        ]
+        context.audit_log = list(previous.audit_log)
+        context.audit_events = deepcopy(previous.audit_events)
+        context.record_event(f'replan_requested:revision={context.revision}', actor='human',
+            details={'reason': 'Requirement or scenario replacement', 'prior_revision': previous.revision,
+                     'scenario': payload.scenario})
+        context.record_event(f'prior_outputs_invalidated:revision={previous.revision}',
+            details={'invalidated_artifact_keys': sorted(previous.artifacts)})
         if payload.scenario == 'ambiguous':
             context.artifacts['questions'] = [
                 'Include aggregate click analytics?', 'Accept no expiration or custom aliases?']
@@ -182,6 +192,7 @@ def engineering_summary(workflow_id: str):
         limitations = [
             'Deterministic bounded adapters; no general LLM code generation.',
             'Workflow state and audit history are in memory and clear on restart.',
+            'Audit records are timestamped evidence, not tamper-resistant storage; human actor labels are not authenticated identities.',
             'Release approval marks review readiness; it does not deploy or merge changes.',
             'Static policy checks are not a sandbox or compliance certification.',
             'Agent findings reconcile downstream tasks incrementally; replacing requirements rebuilds the graph with fresh approvals.',
@@ -217,5 +228,8 @@ def engineering_summary(workflow_id: str):
             ],
             'limitations': limitations,
             'metrics': context.metrics,
+            'task_runs': context.task_runs,
+            'artifact_lineage': context.artifact_lineage,
+            'audit_event_count': len(context.audit_events),
             'prior_revision_count': len(context.history),
         }

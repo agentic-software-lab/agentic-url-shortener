@@ -56,10 +56,10 @@ def requirements_agent(context):
     try:
         plan = interpret(context.requirement)
     except ValueError as exc:
-        context.audit_log.append('requirement_rejected:'+str(exc))
+        context.record_event('requirement_rejected:'+str(exc))
         raise
     if plan['questions'] and 'clarification' not in context.artifacts:
-        context.audit_log.append('clarification_required:use_ambiguous_scenario')
+        context.record_event('clarification_required:use_ambiguous_scenario')
         raise ValueError('Ambiguous scope: use the ambiguous scenario and provide clarification')
     if 'clarification' in context.artifacts:
         plan['analytics'] = context.artifacts['clarification']['analytics']

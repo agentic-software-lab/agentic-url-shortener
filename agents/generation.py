@@ -82,7 +82,7 @@ def testing_agent(context):
         context.artifacts['policy_validation'] = validate_sources({name:(workspace/name).read_text() for name in ['main.py','test_generated.py']})
     except (ValueError, SyntaxError) as exc:
         context.artifacts['policy_validation'] = {'status':'failed','reason':str(exc)}
-        context.audit_log.append('policy_rejected:' + str(exc))
+        context.record_event('policy_rejected:' + str(exc))
         raise
     result = subprocess.run([sys.executable,'-m','pytest','-q'], cwd=context.artifacts['workspace'], capture_output=True,text=True,timeout=60)
     context.artifacts['validation'] = {'command':'python3 -m pytest -q','exit_code':result.returncode,'output':(result.stdout+result.stderr)[-12000:]}

@@ -727,3 +727,27 @@ the incoming requirement/scenario invalidates the candidate and rebuilds with
 fresh approval, as before. Agent findings within the same requirement use
 incremental reconciliation. Brownfield expiration and recovery adapters keep
 their existing execution behavior. No LLM or model API dependency is introduced.
+
+
+### Structured audit events and artifact lineage
+
+`GET /workflows/{id}/events` retains the existing `events` string list and adds
+`records` plus `schema_version: 1`. Records contain a UTC timestamp, sequence,
+revision, event type, task ID, attempt, actor role, message and details.
+The coordinator assigns unique sequence numbers as parallel results are
+merged. Worker timestamps retain occurrence time; sequence represents ingestion
+order, so parallel timestamps may be out of order.
+
+`GET /workflows/{id}/summary` adds `task_runs`, `artifact_lineage`, and
+`audit_event_count`. Each run connects its start and outcome events to
+available input fingerprints/producers, dependencies, committed output
+fingerprints, and accepted decisions. Failed attempts, retries, fallback and
+compensation remain visible. Failed or conflicting outputs do not receive
+producer lineage. Incremental replans preserve original producer revisions;
+requirement replacement archives the prior trace and starts fresh lineage.
+
+Fingerprints hash canonical JSON artifact content, not external files on disk.
+Unsupported non-JSON artifacts use a null fingerprint. Available inputs are
+snapshot context, not a per-key read-access log. The audit is in memory and is
+not tamper-resistant. Human actor labels describe approval/clarification
+requests; authentication and durable audit storage remain future work.
