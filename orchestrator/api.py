@@ -29,7 +29,7 @@ def lookup(workflow_id):
 
 def snapshot(workflow_id, engine, context):
     states = engine.statuses()
-    if "failed" in states.values():
+    if engine.safe_stopped or "failed" in states.values():
         status = "failed"
     elif "waiting_approval" in states.values():
         status = "waiting_approval"
@@ -38,7 +38,7 @@ def snapshot(workflow_id, engine, context):
     else:
         status = "blocked"
     return {"workflow_id": workflow_id, "status": status, "requirement": context.requirement,
-            "nodes": states, "decisions": context.decisions, "artifacts": context.artifacts,
+            "plan": engine.plan(), "nodes": states, "decisions": context.decisions, "artifacts": context.artifacts,
             "revision": context.revision, "history": context.history,
             "pending_approvals": [n for n, s in states.items() if s == "waiting_approval"]}
 
@@ -184,7 +184,7 @@ def engineering_summary(workflow_id: str):
             'Workflow state and audit history are in memory and clear on restart.',
             'Release approval marks review readiness; it does not deploy or merge changes.',
             'Static policy checks are not a sandbox or compliance certification.',
-            'Replanning rebuilds the full supported graph; compensation is opt-in per node.',
+            'Agent findings reconcile downstream tasks incrementally; replacing requirements rebuilds the graph with fresh approvals.',
         ]
         return {
             'workflow_id': workflow_id,
@@ -193,7 +193,7 @@ def engineering_summary(workflow_id: str):
             'review_ready': state['status'] == 'succeeded' and validation is not None
                             and validation.get('exit_code') == 0,
             'requirement': context.requirement,
-            'plan': artifacts.get('tasks', artifacts.get('implementation_plan', [])),
+            'plan': engine.plan(),
             'rationale': context.decisions,
             'assumptions': artifacts.get('assumptions', {}),
             'clarification': artifacts.get('clarification'),

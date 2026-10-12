@@ -163,3 +163,122 @@ def test_mttr_records_recovered_nodes_only(monkeypatch):
     clean = WorkflowContext('no failures')
     WorkflowEngine([Node('clean',lambda context: None)]).execute(clean)
     assert 'mttr_ms' not in clean.metrics
+
+
+def test_requirements_produce_different_executable_plans():
+    from scenarios.greenfield import build_engine
+    graphs = []
+    for scope in ['with analytics', 'without analytics']:
+        engine = build_engine()
+        context = WorkflowContext('Build URL shortener ' + scope)
+        engine.execute(context)
+        graphs.append({task['id']: task for task in engine.plan()})
+        assert all(t['output'] for t in engine.plan())
+        assert graphs[-1]['implementation']['status'] == 'waiting_approval'
+    assert 'analytics' in graphs[0] and 'analytics' not in graphs[1]
+    assert 'analytics' in graphs[0]['testing']['dependencies']
+    assert 'analytics' not in graphs[1]['testing']['dependencies']
+
+
+def test_security_replan_preserves_completed_tasks_and_release_gate():
+    from scenarios.greenfield import build_engine
+    engine = build_engine()
+    context = WorkflowContext('Build URL shortener with analytics and abuse protection')
+    engine.execute(context)
+    assert context.revision == 2
+    assert engine.nodes['testing'].dependencies == {'implementation', 'redirect_guard', 'analytics'}
+    assert context.history[0]['added'] == ['redirect_guard']
+    assert context.history[0]['modified'] == ['testing']
+    for name in ['requirements', 'architecture', 'security']:
+        assert name in context.history[0]['preserved']
+        assert engine.nodes[name].attempts == 1
+    assert engine.nodes['implementation'].status == NodeStatus.WAITING_APPROVAL
+    engine.approve('implementation', context)
+    engine.execute(context)
+    assert engine.nodes['redirect_guard'].status == NodeStatus.SUCCEEDED
+    assert context.artifacts['validation']['exit_code'] == 0
+    assert engine.nodes['release'].status == NodeStatus.WAITING_APPROVAL
+    engine.approve('release', context)
+    engine.execute(context)
+    assert context.metrics['workflow_succeeded'] == 1
+    assert all(engine.nodes[n].attempts == 1 for n in ['requirements', 'architecture', 'security'])
+
+
+def test_invalid_replans_are_atomic_and_safe_stop():
+    from orchestrator.engine import ReplanRequest
+    for kind in ['cycle', 'missing', 'completed', 'gate', 'duplicate', 'budget']:
+        engine = WorkflowEngine([Node('source', lambda c: None),
+            Node('work', lambda c: None, {'source'}, requires_human_approval=True)],
+            max_replans=0 if kind == 'budget' else 4)
+        context = WorkflowContext('test')
+        engine.execute(context)
+        old = engine.nodes['work']
+        if kind == 'cycle':
+            request = ReplanRequest('source', kind, [Node('extra', lambda c: None, {'work'})],
+                [Node('work', lambda c: None, {'extra'}, requires_human_approval=True)])
+        elif kind == 'missing':
+            request = ReplanRequest('source', kind, [Node('extra', lambda c: None, {'absent'})])
+        elif kind == 'completed':
+            request = ReplanRequest('source', kind, modify_tasks=[Node('source', lambda c: None)])
+        elif kind == 'gate':
+            request = ReplanRequest('source', kind, modify_tasks=[Node('work', lambda c: None, {'source'})])
+        elif kind == 'duplicate':
+            request = ReplanRequest('source', kind, [Node('work', lambda c: None, {'source'})])
+        else:
+            request = ReplanRequest('source', kind, [Node('extra', lambda c: None, {'source'})])
+        assert not engine.apply_replan(request, context)
+        assert engine.nodes['work'] is old
+        assert 'extra' not in engine.nodes
+        engine.execute(context)
+        assert engine.nodes['work'].attempts == 0
+        assert engine.nodes['source'].attempts == 1
+        assert context.revision == 1
+        assert 'safe_stop:replan' in context.audit_log
+        assert context.metrics['workflow_succeeded'] == 0
+
+
+def test_validation_agent_can_replan_after_success_without_rerunning():
+    from orchestrator.engine import ReplanRequest
+    def validate(context):
+        return ReplanRequest('validation', 'Add final evidence review',
+            [Node('evidence', lambda c: c.artifacts.update({'evidence': True}), {'validation'})],
+            [Node('release', lambda c: None, {'evidence'}, requires_human_approval=True)])
+    engine = WorkflowEngine([Node('validation', validate),
+        Node('release', lambda c: None, {'validation'}, requires_human_approval=True)])
+    context = WorkflowContext('test')
+    engine.execute(context)
+    assert engine.nodes['validation'].attempts == 1
+    assert context.artifacts['evidence'] is True
+    assert engine.statuses()['release'] == 'waiting_approval'
+    assert context.history[0]['source'] == 'validation'
+
+
+def test_agent_invalid_replan_blocks_all_future_execution():
+    from orchestrator.engine import ReplanRequest
+    def architecture(context):
+        return ReplanRequest('architecture', 'Invalid dependency',
+                             [Node('new', lambda c: None, {'missing'})])
+    engine = WorkflowEngine([Node('architecture', architecture),
+        Node('implementation', lambda c: None, {'architecture'})])
+    context = WorkflowContext('test')
+    engine.execute(context)
+    engine.execute(context)
+    assert engine.safe_stopped
+    assert engine.nodes['implementation'].attempts == 0
+    assert engine.nodes['architecture'].attempts == 1
+    assert 'new' not in engine.nodes
+
+
+def test_replanning_restores_approval_for_changed_previously_approved_task():
+    from orchestrator.engine import ReplanRequest
+    engine = WorkflowEngine([Node('source', lambda c: None),
+        Node('work', lambda c: None, {'source'}, requires_human_approval=True)])
+    context = WorkflowContext('test')
+    engine.execute(context)
+    engine.approve('work', context)
+    request = ReplanRequest('source', 'Revise work acceptance', modify_tasks=[
+        Node('work', lambda c: None, {'source'}, output='Revised output')])
+    assert engine.apply_replan(request, context)
+    engine.execute(context)
+    assert engine.nodes['work'].status == NodeStatus.WAITING_APPROVAL
+    assert engine.nodes['work'].attempts == 0

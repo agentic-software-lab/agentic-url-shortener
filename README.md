@@ -693,3 +693,37 @@ The bounded planner in `agents/requirements.py` interprets URL-shortener scope, 
 Compare `Build a URL shortener with analytics` with `Build a URL shortener without analytics`: the plan changes, and the candidate includes or excludes the analytics endpoint accordingly. Ambiguous scope such as “useful” or “production ready” requires the ambiguous scenario and explicit clarification. Unsupported domains and recognized unsupported capabilities stop the workflow; rejection reasons appear in audit events.
 
 The scaffold supports HTTP/HTTPS links, deterministic codes, HTTP 307 redirects, and optional aggregate analytics. Expiration changes use the separate brownfield adapter. Interpretation uses explicit vocabulary and negation rules, not a general semantic parser; unknown phrasing can be missed. Capability expansion, broader requirement reasoning, and automated acceptance-to-test coverage mapping remain future work.
+
+### Requirement-driven execution and incremental agent replanning
+
+The bounded interpreter now drives the executable DAG, not only the generated
+source. Greenfield and clarified scenarios insert an `analytics` verification
+task only when aggregate analytics is requested; validation waits for it.
+`Node` is the single task representation: its name is the task ID, alongside
+explicit dependencies, output, acceptance criteria and runtime status. Workflow
+snapshots and engineering summaries expose this executable `plan`.
+
+Agents may return a `ReplanRequest(source, reason, add_tasks, modify_tasks)`.
+The executor collects successful results, synchronizes the current parallel
+wave, validates a proposed DAG, then commits the changes atomically. Unchanged
+successful task objects, attempts and artifacts are retained. Only unexecuted
+downstream tasks may be modified; incompatible changes to completed work are
+rejected. Added tasks must be downstream of the requesting task. Existing
+approval gates cannot be removed, and changed work that was already approved
+requires a new approval. Replanning is bounded to four accepted revisions per
+engine; rejection safe-stops the engine across subsequent execution calls.
+
+Example requirement: `Build URL shortener with analytics and abuse protection`.
+Security requests a `redirect_guard` task after implementation, and adds it to
+validation's dependencies. The guard verifies the generator's existing
+HTTP/HTTPS schema and unsafe-scheme regression test; it does not claim to add
+production abuse detection. Requirements, Architecture and Security stay
+successful and execute once. Implementation and release retain human gates.
+History records source, reason, added/modified/preserved IDs and before/after
+plan snapshots; the audit log records requests, revisions and rejection reasons.
+
+The existing `/workflows/{id}/replan` endpoint has a distinct purpose: replacing
+the incoming requirement/scenario invalidates the candidate and rebuilds with
+fresh approval, as before. Agent findings within the same requirement use
+incremental reconciliation. Brownfield expiration and recovery adapters keep
+their existing execution behavior. No LLM or model API dependency is introduced.

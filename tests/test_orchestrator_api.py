@@ -164,3 +164,19 @@ def test_requirement_drives_generated_analytics_scope():
     failed = client.post('/workflows',json={'requirement':'Build URL shortener with custom aliases'}).json()
     assert failed['status'] == 'failed'
     assert failed['nodes']['implementation'] == 'blocked'
+
+
+def test_api_exposes_dynamic_plan_and_security_replan_history():
+    data = client.post('/workflows', json={
+        'requirement': 'Build URL shortener with analytics and abuse protection'}).json()
+    assert data['revision'] == 2
+    assert data['history'][0]['source'] == 'security'
+    tasks = {t['id']: t for t in data['plan']}
+    assert tasks['redirect_guard']['status'] == 'blocked'
+    assert tasks['testing']['dependencies'] == ['analytics', 'implementation', 'redirect_guard']
+    key = data['workflow_id']
+    data = client.post(f'/workflows/{key}/approvals/implementation').json()
+    assert data['pending_approvals'] == ['release']
+    summary = client.get(f'/workflows/{key}/summary').json()
+    assert any(t['id'] == 'redirect_guard' and t['status'] == 'succeeded' for t in summary['plan'])
+    assert summary['validation']['exit_code'] == 0
