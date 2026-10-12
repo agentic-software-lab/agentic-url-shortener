@@ -790,6 +790,8 @@ audit records and failure demonstrations, see [Demo walkthrough](docs/demo.md).
 
 Agentic workflow
 
+<img width="1531" height="1115" alt="Screenshot 2026-10-11 at 9 22 08 PM" src="https://github.com/user-attachments/assets/8048f3a8-adc0-47eb-b69a-f4ecc0282427" />
+
 <img width="1576" height="883" alt="Screenshot 2026-10-11 at 9 19 47 PM" src="https://github.com/user-attachments/assets/5a681afb-a62f-4701-921f-d298e9170eb0" />
 
 
