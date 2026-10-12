@@ -785,3 +785,18 @@ production concurrency strategy.
 
 For an end-to-end project walkthrough with approval checkpoints, replanning,
 audit records and failure demonstrations, see [Demo walkthrough](docs/demo.md).
+
+### Screenshots
+
+Agentic workflow
+
+<img width="1576" height="883" alt="Screenshot 2026-10-11 at 9 19 47 PM" src="https://github.com/user-attachments/assets/5a681afb-a62f-4701-921f-d298e9170eb0" />
+
+
+<img width="1169" height="914" alt="Screenshot 2026-10-11 at 9 18 39 PM" src="https://github.com/user-attachments/assets/6cd6f663-5b91-4b1a-a780-bce6e5164226" />
+
+
+URL Shortner UI
+
+<img width="1177" height="657" alt="Screenshot 2026-10-11 at 9 18 19 PM" src="https://github.com/user-attachments/assets/e9e6785c-8285-4729-8612-c16239cb157a" />
+
