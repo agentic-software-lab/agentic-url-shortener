@@ -80,7 +80,7 @@ def validate_candidate(context):
         env.pop(key, None)
     env['PYTEST_DISABLE_PLUGIN_AUTOLOAD'] = '1'
     command = [sys.executable, '-m', 'pytest', '-q', '-c', os.devnull,
-               '--confcutdir', str(workspace), *manifest['test_files']]
+               '--rootdir', str(workspace), '--confcutdir', str(workspace), *manifest['test_files']]
     try:
         result = subprocess.run(command, cwd=str(workspace), env=env,
                                 capture_output=True, text=True, timeout=60)
