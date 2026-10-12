@@ -101,6 +101,32 @@ Open [Orchestrator Swagger UI](http://127.0.0.1:8001/docs). Create a workflow wi
 | POST | `/workflows/{workflow_id}/replan` | Revise requirement and invalidate the candidate. |
 | GET | `/workflows/{workflow_id}/summary` | Review the final engineering report. |
 
+### 6. Start the Next.js interface
+
+In a third terminal from the repository folder:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open [http://localhost:3000](http://localhost:3000). Keep the URL API running on
+port 8000 to create short links and refresh click analytics. The Agentic SDLC
+section is a workflow overview with a link to the orchestrator Swagger UI,
+where workflows can be created, clarified, approved, and inspected.
+
+The frontend defaults to the URL API at `http://127.0.0.1:8000` and the
+orchestrator at `http://127.0.0.1:8001`. Set `NEXT_PUBLIC_API_URL` and
+`NEXT_PUBLIC_ORCHESTRATOR_URL` in `frontend/.env.local` when changing those
+addresses, then restart Next.js. The overview does not display live task status.
+
+To verify the production build:
+
+```bash
+npm run build
+```
+
 ### Review a real brownfield change
 
 Create a workflow in Swagger with:
@@ -257,63 +283,38 @@ curl http://127.0.0.1:8000/urls/<short_code>/analytics
 
 ## High-Level Architecture
 
-```text
-                         +----------------------+
-                         |   User Requirement   |
-                         +----------+-----------+
-                                    |
-                                    v
-                         +----------------------+
-                         | Requirements Agent   |
-                         +----------+-----------+
-                                    |
-                     +--------------+--------------+
-                     |                             |
-                     v                             v
-          +----------------------+      +----------------------+
-          | Architecture Agent   |      |   Security Agent     |
-          +----------+-----------+      +----------+-----------+
-                     |                             |
-                     +--------------+--------------+
-                                    |
-                                    v
-                         +----------------------+
-                         | Human Approval Gate  |
-                         +----------+-----------+
-                                    |
-                                    v
-                         +----------------------+
-                         | Implementation Agent |
-                         +----------+-----------+
-                                    |
-                     +--------------+--------------+
-                     |                             |
-                     v                             v
-          +----------------------+      +----------------------+
-          |     Test Agent       |      | Documentation Agent  |
-          +----------+-----------+      +----------+-----------+
-                     |                             |
-                     +--------------+--------------+
-                                    |
-                                    v
-                         +----------------------+
-                         |   Validation Gate    |
-                         +----------+-----------+
-                                    |
-                      +-------------+-------------+
-                      |                           |
-                    PASS                         FAIL
-                      |                           |
-                      v                           v
-          +----------------------+      +----------------------+
-          | Human Release Gate   |      | Retry / Safe Stop    |
-          +----------+-----------+      +----------------------+
-                     |
-                     v
-          +----------------------+
-          |       Release        |
-          +----------------------+
+The greenfield workflow uses an explicit dependency graph. Testing includes
+policy checks, candidate integrity checks, and pytest validation; it is not
+followed by a separate validation task. Documentation is an independent branch.
+
+```mermaid
+flowchart TD
+    R["Requirement interpretation"] --> P["Requirement-driven plan"]
+    P --> A["Architecture"]
+    P --> S["Security"]
+    A --> I["Human implementation approval"]
+    S --> I
+    I --> G["Generate candidate"]
+    G --> O["Optional analytics and redirect-guard tasks"]
+    G --> T["Testing and validation"]
+    O --> T
+    G --> D["Documentation"]
+    T --> L["Human release approval"]
+    D --> L
+    L --> C["Release integrity check"]
+    C --> E["Reviewable engineering summary"]
 ```
+
+Optional tasks are separate executable nodes: analytics is selected from the
+requirement, and redirect_guard can be added by a Security replan request.
+When neither task is present, testing depends directly on implementation.
+Failed tasks exhaust bounded retries and any registered fallback before
+blocking dependents; registered compensation handles partial side effects.
+Invalid plans safe-stop the engine.
+
+Ambiguous workflows add clarification submission and human clarification
+approval before planning and design reviews. Brownfield expiration uses its
+own impact-analysis and bounded-edit path, described below.
 
 ---
 
@@ -342,22 +343,19 @@ Every node defines:
 - dependencies
 - whether human approval is required
 - retry limits
+- expected output and acceptance criteria
 - current status
 
 Example:
 
-```text
-requirements
-   |
-   +--> architecture
-   |
-   +--> security
-
-architecture + security
-   |
-   v
-implementation
+```mermaid
+flowchart TD
+    R["Requirements"] --> A["Architecture"]
+    R --> S["Security"]
+    A --> I["Implementation approval and execution"]
+    S --> I
 ```
+
 
 Architecture and security are independent after the requirement is understood, so the engine runs them concurrently. Implementation cannot begin until both succeed and its human approval gate is approved.
 
@@ -381,19 +379,9 @@ This prevents each agent from operating with isolated context and creates decisi
 
 High-impact steps can require explicit approval.
 
-For example:
-
-```text
-Architecture + Security complete
-             |
-             v
-     Implementation Gate
-             |
-        human approves
-             |
-             v
-       Implementation
-```
+Implementation waits for both Architecture and Security to succeed, then
+pauses for human approval before executing. Release has a separate approval
+checkpoint after successful validation and documentation.
 
 The engine pauses that node in `waiting_approval` state until `approve()` is called.
 
@@ -403,24 +391,6 @@ This demonstrates controlled autonomy: agents can execute work, but humans remai
 
 If a node fails, the engine records the failure and retries only up to the configured retry limit.
 
-```text
-Agent execution
-      |
-      v
-   Success? ------ yes -----> Continue
-      |
-      no
-      |
-      v
-Retry limit available?
-      |
- +----+----+
- |         |
-yes        no
- |         |
- v         v
-Retry    Safe Stop
-```
 
 Once retries are exhausted, the node is marked failed and downstream dependent nodes remain blocked.
 
@@ -434,7 +404,7 @@ python3 -m scenarios.recovery
 
 This demo shows a primary adapter failing twice before fallback succeeds, then a separate partial-file failure whose compensation deletes the disposable candidate. Metrics include `fallback_count` and `rollback_count` (attempted compensation count), and audit events record outcomes.
 
-Compensation is opt-in per node, not a transaction across the entire workflow. It does not undo successful upstream nodes, deployments, or arbitrary external effects. Fallback discards partial context changes but adapters remain responsible for external side effects. Existing application scenarios do not automatically register recovery callbacks. Requirement-change replanning is available through the API; selective downstream replanning is not implemented.
+Compensation is opt-in per node, not a transaction across the entire workflow. It does not undo successful upstream nodes, deployments, or arbitrary external effects. Fallback discards partial context changes but adapters remain responsible for external side effects. Existing application scenarios do not automatically register recovery callbacks. Requirement replacement is available through the API and rebuilds the candidate with fresh approvals. Agent findings can also request incremental replanning that adds or modifies unexecuted downstream tasks while preserving completed work.
 
 ### 6. Auditability
 
@@ -466,7 +436,7 @@ The architecture can later export these metrics to Datadog, OpenTelemetry, Cloud
 
 ---
 
-## Three Required Scenarios
+## Project Scenarios
 
 ### Greenfield
 
@@ -484,31 +454,16 @@ Build a URL shortener with analytics and reliability controls.
 
 Flow:
 
-```text
-Requirement
-   |
-   v
-Requirements
-   |
-   +------> Architecture
-   |
-   +------> Security
-               |
-               v
-       Human Approval
-               |
-               v
-        Implementation
-          /          \
-         v            v
-      Testing     Documentation
-          \          /
-           v        v
-          Release Gate
-               |
-               v
-             Release
-```
+1. Interpret the requirement and build the executable task/dependency plan.
+2. Run Architecture and Security in parallel; synchronize their results and
+   apply any valid agent-requested replan.
+3. Wait for human implementation approval, then generate the candidate.
+4. Run Documentation alongside the validation branch. Testing waits for any
+   optional analytics or redirect-guard tasks before checking integrity,
+   policy, and candidate tests.
+5. Wait for Testing and Documentation to succeed, obtain human release
+   approval, and verify candidate integrity again.
+6. Expose the reviewable engineering summary and audit evidence.
 
 ### Brownfield
 
@@ -552,35 +507,20 @@ The workflow records assumptions and pauses at a human approval checkpoint befor
 
 ## URL Shortener Flow
 
-```text
-Client
-  |
-  | POST /urls
-  v
-FastAPI
-  |
-  | validate URL
-  | generate deterministic short code
-  v
-In-memory URL store
-  |
-  v
-Return short_code
-
-Client opens /r/{short_code}
-  |
-  v
-FastAPI lookup
-  |
-  | increment click counter
-  v
-307 Redirect to original URL
-
-Client calls /urls/{short_code}/analytics
-  |
-  v
-Return original URL, creation time, and click count
+```mermaid
+flowchart TD
+    P["POST /urls"] --> V["Validate HTTP/HTTPS URL"]
+    V --> H["Generate deterministic short code"]
+    H --> C{"Conflicting mapping?"}
+    C -->|Yes| X["HTTP 409; preserve existing mapping"]
+    C -->|No| U["Create or reuse mapping"]
+    U --> K["Return short code"]
+    R["GET /r/{short_code}"] --> F{"Mapping found?"}
+    F -->|No| N["HTTP 404"]
+    F -->|Yes| B["Increment clicks and redirect with HTTP 307"]
+    A["GET /urls/{short_code}/analytics"] --> D["Return mapping and click count, or HTTP 404"]
 ```
+
 
 The prototype uses an in-memory store to keep the focus on orchestration and engineering behavior. A production version would replace this with a persistent repository backed by PostgreSQL, DynamoDB, Redis, or another durable data store.
 
@@ -597,12 +537,16 @@ agentic-url-shortener/
 +-- orchestrator/
 |   +-- api.py
 |   +-- engine.py
+|   +-- observability.py
 |
 +-- agents/
 |   +-- core.py
 |   +-- generation.py
 |   +-- expiration.py
 |   +-- policy.py
+|   +-- requirements.py
+|   +-- planning.py
+|   +-- candidate.py
 |
 +-- scenarios/
 |   +-- greenfield.py
@@ -615,9 +559,17 @@ agentic-url-shortener/
 |   +-- test_orchestrator.py
 |   +-- test_orchestrator_api.py
 |   +-- test_policy.py
+|   +-- test_requirements.py
+|   +-- test_observability.py
+|   +-- test_candidate_guardrails.py
 |
 +-- docs/
 |   +-- architecture.md
+|   +-- demo.md
+|
++-- frontend/
+|   +-- app/
+|   +-- package.json
 |
 +-- requirements.txt
 +-- README.md
@@ -647,7 +599,7 @@ Use `POST /workflows/{workflow_id}/replan` with a revised requirement and suppor
 
 The same workflow ID receives an incremented `revision`. Prior decisions, artifacts, status, and metrics are preserved in `history`, while current outputs are invalidated. Approve node `replan` before the revised graph can run. Then provide clarification if required and approve implementation and release again. Prior approvals do not authorize the revised candidate.
 
-This is a full graph rebuild using supported deterministic scenario builders, not automatic LLM planning or selective descendant invalidation. Old candidate files are retained for review and need manual cleanup. Replanning does not undo external side effects or deploy a candidate; the API serializes mutations within one process.
+This endpoint rebuilds the graph using supported deterministic scenario builders. Agent-requested incremental replanning uses the separate reconciliation path described below; neither path uses an LLM. Old candidate files are retained for review and need manual cleanup. Replanning does not undo external side effects or deploy a candidate; the API serializes mutations within one process.
 
 
 ## Reliability Metric Definitions
@@ -665,7 +617,7 @@ This is a full graph rebuild using supported deterministic scenario builders, no
 | `recovered_node_count` | Failed nodes that later succeeded through retry or fallback. |
 | `mttr_ms` | Mean time from a recovered node's first failure to successful context merge; omitted when there are no recovered nodes. |
 
-Metrics are per workflow revision and update after execute calls. Replanning begins new measurements and preserves prior metrics in history. MTTR here describes stage recovery, not production incident recovery. Aggregate success rates and retry/rollback frequencies across workflows are not yet computed.
+Metrics update after execute calls. Replacing a requirement through the replan API creates a new engine, starts new measurements, and archives prior metrics in history. Incremental agent-requested replanning keeps the same engine and accumulated execution measurements; node-based metrics reflect the revised graph. MTTR here describes stage recovery, not production incident recovery. Aggregate success rates and retry/rollback frequencies across workflows are not yet computed.
 
 
 ## Policy Guardrails
@@ -798,7 +750,7 @@ Agentic workflow
 <img width="1169" height="914" alt="Screenshot 2026-10-11 at 9 18 39 PM" src="https://github.com/user-attachments/assets/6cd6f663-5b91-4b1a-a780-bce6e5164226" />
 
 
-URL Shortner UI
+URL Shortener UI
 
 <img width="1177" height="657" alt="Screenshot 2026-10-11 at 9 18 19 PM" src="https://github.com/user-attachments/assets/e9e6785c-8285-4729-8612-c16239cb157a" />
 
