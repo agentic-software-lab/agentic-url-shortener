@@ -2,11 +2,9 @@
 import ast
 import difflib
 import shutil
-import subprocess
-import sys
 import tempfile
 from pathlib import Path
-from agents.policy import validate_sources
+from agents.candidate import seal_candidate, validate_candidate, release_guard
 
 from orchestrator.engine import Node, WorkflowContext, WorkflowEngine
 
@@ -83,24 +81,15 @@ def test_invalid_expiration():
         difflib.unified_diff([], tests.splitlines(True), fromfile='/dev/null', tofile='b/tests/test_expiration.py'))
     context.artifacts['documentation'] = 'Optional expires_in_seconds: 1–31536000. Expired redirects return 410 without increasing clicks. Default links never expire. Repeated URL + duration returns the existing mapping, including its original expiry.'
 
+    seal_candidate(context, ['backend/main.py', 'tests/test_expiration.py'])
+
 
 def validate_change(context):
-    workspace = Path(context.artifacts['workspace'])
-    try:
-        context.artifacts['policy_validation'] = validate_sources({name:(workspace/name).read_text() for name in ['backend/main.py','tests/test_expiration.py']})
-    except (ValueError, SyntaxError) as exc:
-        context.artifacts['policy_validation'] = {'status':'failed','reason':str(exc)}
-        context.record_event('policy_rejected:' + str(exc))
-        raise
-    result = subprocess.run([sys.executable, '-m', 'pytest', '-q'], cwd=context.artifacts['workspace'],
-                            capture_output=True, text=True, timeout=60)
-    context.artifacts['validation'] = {'command': 'python3 -m pytest -q', 'exit_code': result.returncode,
-                                     'output': (result.stdout + result.stderr)[-12000:]}
-    if result.returncode:
-        raise RuntimeError('Generated change failed regression tests; release blocked')
+    validate_candidate(context)
 
 
 def review_complete(context):
+    release_guard(context)
     context.artifacts['release_readiness'] = 'Reviewed candidate only; source repository and running API are unchanged.'
 
 

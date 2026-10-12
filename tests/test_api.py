@@ -27,3 +27,18 @@ def test_create_redirect_and_analytics() -> None:
 def test_missing_short_code_returns_404() -> None:
     response = client.get("/r/not-found", follow_redirects=False)
     assert response.status_code == 404
+
+
+def test_hash_collision_preserves_mapping_and_duplicate_behavior(monkeypatch):
+    monkeypatch.setattr('backend.main.generate_code', lambda url: 'collision')
+    original = client.post('/urls', json={'url': 'https://example.com/first'})
+    assert original.status_code == 200
+    code = original.json()['short_code']
+    conflicting = client.post('/urls', json={'url': 'https://example.com/second'})
+    assert conflicting.status_code == 409
+    redirect = client.get('/r/' + code, follow_redirects=False)
+    assert redirect.headers['location'] == 'https://example.com/first'
+    duplicate = client.post('/urls', json={'url': 'https://example.com/first'})
+    assert duplicate.status_code == 200
+    assert duplicate.json()['short_code'] == code
+    assert duplicate.json()['clicks'] == 1

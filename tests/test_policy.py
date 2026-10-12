@@ -22,8 +22,10 @@ def test_policy_failure_blocks_test_execution(monkeypatch,tmp_path):
     (tmp_path/'main.py').write_text('import subprocess')
     (tmp_path/'test_generated.py').write_text('')
     def unexpected(*args,**kwargs): raise AssertionError('Should never execute unapproved sources')
-    monkeypatch.setattr('agents.generation.subprocess.run',unexpected)
+    monkeypatch.setattr('agents.candidate.subprocess.run',unexpected)
     context = WorkflowContext('policy')
     context.artifacts['workspace'] = str(tmp_path)
+    from agents.candidate import seal_candidate
+    seal_candidate(context, ['main.py', 'test_generated.py'])
     with pytest.raises(ValueError): testing_agent(context)
-    assert context.artifacts['policy_validation']['status'] == 'failed'
+    assert any(e['event_type'] == 'policy_rejected' for e in context.audit_events)

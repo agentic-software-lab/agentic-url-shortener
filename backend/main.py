@@ -64,11 +64,15 @@ def health() -> dict[str, str]:
     responses={
         200: {"description": "Short URL created or existing deterministic mapping returned"},
         422: {"description": "Invalid request or URL"},
+        409: {"description": "Short-code collision; existing mapping preserved"},
     },
 )
 def create_short_url(payload: ShortenRequest) -> UrlRecord:
     original = str(payload.url)
     short_code = generate_code(original)
+
+    if short_code in URLS and URLS[short_code].original_url != original:
+        raise HTTPException(status_code=409, detail="Short-code collision; existing mapping preserved")
 
     if short_code not in URLS:
         URLS[short_code] = UrlRecord(

@@ -62,5 +62,7 @@ def documentation_agent(context: WorkflowContext) -> None:
 
 
 def release_agent(context: WorkflowContext) -> None:
+    from agents.candidate import release_guard
+    release_guard(context)
     context.artifacts["release_readiness"] = "approved for prototype release"
     context.decisions.append("Release proceeds only after validation and explicit human approval.")
