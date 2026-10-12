@@ -751,3 +751,37 @@ Unsupported non-JSON artifacts use a null fingerprint. Available inputs are
 snapshot context, not a per-key read-access log. The audit is in memory and is
 not tamper-resistant. Human actor labels describe approval/clarification
 requests; authentication and durable audit storage remain future work.
+
+### Candidate integrity and release guardrails
+
+Trusted generators seal a SHA-256 manifest of the complete candidate workspace
+(excluding runtime caches and the root README written by the documentation
+agent). Before executing tests, validation rejects modified, missing, extra or
+symlinked files and applies the existing AST checks to generated/changed source
+and tests. Brownfield support modules are sealed trusted copies, not newly
+AST-certified code.
+
+The shared runner removes candidate bytecode/pytest caches, selects only sealed
+test files, ignores pytest configuration, disables plugin autoload, and strips
+inherited pytest options/plugins and Python path overrides. Validation retains
+the 60-second timeout and checks integrity again after execution. Release
+requires the same manifest and successful policy/test results, so approving a
+changed candidate fails and requires regeneration/replanning.
+
+These checks constrain trusted deterministic adapters. They do not provide OS
+process isolation, prevent a hostile process from racing filesystem changes,
+or certify arbitrary Python as safe. Workspaces remain local and disposable;
+release readiness still does not deploy or merge code.
+
+
+### Collision behavior and demo walkthrough
+
+The reference API and generated scaffold reject a conflicting short-code hash
+mapping with HTTP 409 instead of returning another URL's mapping. Repeating the
+same URL still returns its original code and preserves click counts. This is
+fail-closed collision handling, not a collision-resolving allocator. The
+in-memory store still lacks persistence, cross-worker coordination and a
+production concurrency strategy.
+
+For an end-to-end project walkthrough with approval checkpoints, replanning,
+audit records and failure demonstrations, see [Demo walkthrough](docs/demo.md).

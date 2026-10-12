@@ -222,7 +222,7 @@ def engineering_summary(workflow_id: str):
             'pending_approvals': state['pending_approvals'],
             'risks_and_tradeoffs': [
                 'In-memory URL data is lost on restart and is not shared across workers.',
-                'Short codes use a truncated deterministic hash; collisions need production handling.',
+                'Conflicting URL hash mappings are rejected with HTTP 409; durable storage and collision-resolving allocation remain production work.',
                 'Candidate tests exercise the supported scope, not production load or durability.',
                 'Temporary candidate workspaces remain on disk until manually removed.',
             ],

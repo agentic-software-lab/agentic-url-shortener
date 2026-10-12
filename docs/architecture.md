@@ -10,7 +10,7 @@
 | Core agents | Record requirement, architecture, security, and release decisions; return structured replan requests. |
 | Generation adapter | Produce a bounded runnable URL-service scaffold, tests, and documentation in a temporary workspace. |
 | Expiration adapter | Inspect existing API functions and create a guarded code-change diff with regression tests. |
-| Policy module | AST checks before candidate validation; not a security sandbox. |
+| Policy and candidate modules | Seal trusted candidate manifests; verify file integrity before/after tests and at release; apply AST checks and constrain pytest configuration. Not an OS sandbox. |
 
 ## Control Flow
 
@@ -40,7 +40,7 @@ Context carries requirement, artifacts, decisions, compatible audit strings, str
 
 Generation uses trusted deterministic templates and bounded edit rules, not a general natural-language coding model. Greenfield and ambiguous candidates contain application source, test source, and a README. Clarification can include or exclude the analytics endpoint; expiration and aliases are explicitly outside that scaffold's supported scope.
 
-Brownfield generation inspects Python functions and verifies replacement anchors before writing a diff. Candidate policy checks precede pytest. Tests run with the current interpreter, a fixed command, a 60-second timeout, and captured output. Test success unlocks release approval; approval marks review readiness and does not deploy.
+Brownfield generation inspects Python functions and verifies replacement anchors before writing a diff. Generators seal a manifest of the candidate files. Validation checks that exact inventory and rejects symlinks before applying AST policy checks to generated/changed sources and tests. The runner removes candidate caches, selects sealed test files, ignores pytest configuration, disables plugin autoload, and removes inherited pytest/Python-path options. Tests run with the current interpreter, a 60-second timeout, and captured output. A second integrity check follows execution. Release checks that the current manifest matches successful validation. Approval marks review readiness and does not deploy. Trusted copied brownfield support modules are fingerprinted but are not newly AST-certified; these controls are not a hostile-code sandbox.
 
 ## Governance and Recovery
 
@@ -58,7 +58,7 @@ Each structured audit event has a UTC timestamp, coordinator-assigned sequence, 
 
 Each task-attempt record links start/outcome events, dependencies, available input fingerprints and their prior producers, committed output fingerprints, and accepted decisions. Available inputs describe the worker snapshot, not a claim that the task read every artifact. Only successful changed artifacts receive producer lineage; failures and conflicting writes have no committed outputs. Fingerprints are SHA-256 of canonical JSON artifact content, not a signature or proof of the current bytes on disk. Non-JSON artifacts have a null fingerprint. Incremental replanning keeps original producer revisions; requirement replacement archives old trace evidence and clears current lineage.
 
-Legacy audit strings remain available alongside structured records. Audit history is in memory and is not tamper-resistant; actor roles label actions but do not authenticate users. Authentication, role permissions, persistent workflow storage, aggregate reliability statistics, subprocess isolation, and general LLM planning are not implemented. The reference URL store is in memory and truncated-hash collision handling remains a production improvement.
+Legacy audit strings remain available alongside structured records. Audit history is in memory and is not tamper-resistant; actor roles label actions but do not authenticate users. Authentication, role permissions, persistent workflow storage, aggregate reliability statistics, subprocess isolation, and general LLM planning are not implemented. The reference URL store is in memory. Conflicting hash mappings are rejected with HTTP 409; durable storage, collision-resolving allocation and production concurrency handling remain future work.
 
 ## Validation Evidence
 

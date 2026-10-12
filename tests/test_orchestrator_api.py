@@ -67,7 +67,7 @@ def test_greenfield_generates_runnable_artifacts():
     assert data['artifacts']['validation']['exit_code'] == 0
     assert 'main.py' in data['artifacts']['generated_files']
     assert 'test_generated.py' in data['artifacts']['generated_files']
-    assert '3 passed' in data['artifacts']['validation']['output']
+    assert '4 passed' in data['artifacts']['validation']['output']
     assert 'Run:' in data['artifacts']['documentation']
 
 
@@ -88,7 +88,7 @@ def test_ambiguous_requires_choices_and_changes_generated_scope():
 
 def test_generated_validation_failure_blocks_release(monkeypatch):
     from types import SimpleNamespace
-    monkeypatch.setattr('agents.generation.subprocess.run',lambda *a, **k: SimpleNamespace(returncode=1,stdout='test failure',stderr=''))
+    monkeypatch.setattr('agents.candidate.subprocess.run',lambda *a, **k: SimpleNamespace(returncode=1,stdout='test failure',stderr=''))
     key = client.post('/workflows',json={'requirement':'Build URL shortener'}).json()['workflow_id']
     data = client.post(f'/workflows/{key}/approvals/implementation').json()
     assert data['nodes']['testing'] == 'failed'
@@ -209,3 +209,18 @@ def test_structured_events_summary_lineage_and_requirement_replacement():
     assert replacement['revision'] == 2
     report = client.get(f'/workflows/{key}/summary').json()
     assert report['artifact_lineage'] == {} and report['task_runs'] == []
+
+
+def test_release_approval_cannot_accept_code_changed_after_validation():
+    from pathlib import Path
+    key = client.post('/workflows', json={'requirement': 'Build URL shortener'}).json()['workflow_id']
+    data = client.post(f'/workflows/{key}/approvals/implementation').json()
+    assert data['pending_approvals'] == ['release']
+    Path(data['artifacts']['workspace'], 'main.py').write_text('CHANGED = True\n')
+    data = client.post(f'/workflows/{key}/approvals/release').json()
+    assert data['status'] == 'failed'
+    assert data['nodes']['release'] == 'failed'
+    assert 'release_readiness' not in data['artifacts']
+    assert client.get(f'/workflows/{key}/summary').json()['review_ready'] is False
+    records = client.get(f'/workflows/{key}/events').json()['records']
+    assert any(e['event_type'] == 'release_rejected' for e in records)
