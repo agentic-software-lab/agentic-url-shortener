@@ -27,6 +27,11 @@ def security_agent(context: WorkflowContext) -> None:
         "guards": ["input validation", "bounded retries", "human release approval"],
     }
 
+    import re
+    if re.search(r'\b(abuse|malicious|unsafe redirects)\b', context.requirement.lower()):
+        from agents.planning import security_replan
+        return security_replan(context)
+
 
 def implementation_agent(context: WorkflowContext) -> None:
     context.artifacts["implementation_plan"] = [

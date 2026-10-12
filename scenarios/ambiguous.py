@@ -1,3 +1,4 @@
+from agents.planning import requirement_plan
 from agents.core import (
     architecture_agent,
     documentation_agent,
@@ -44,7 +45,7 @@ def build_engine() -> WorkflowEngine:
             Node("testing", testing_agent, {"implementation"}),
             Node("documentation", documentation_agent, {"implementation"}),
             Node("release", release_agent, {"testing", "documentation"}, requires_human_approval=True),
-        ]
+        ], planner=requirement_plan, planning_trigger="clarify"
     )
 
 def run() -> None:
