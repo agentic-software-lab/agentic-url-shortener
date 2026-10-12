@@ -90,7 +90,7 @@ def validate_change(context):
         context.artifacts['policy_validation'] = validate_sources({name:(workspace/name).read_text() for name in ['backend/main.py','tests/test_expiration.py']})
     except (ValueError, SyntaxError) as exc:
         context.artifacts['policy_validation'] = {'status':'failed','reason':str(exc)}
-        context.audit_log.append('policy_rejected:' + str(exc))
+        context.record_event('policy_rejected:' + str(exc))
         raise
     result = subprocess.run([sys.executable, '-m', 'pytest', '-q'], cwd=context.artifacts['workspace'],
                             capture_output=True, text=True, timeout=60)

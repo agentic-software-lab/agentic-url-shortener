@@ -180,3 +180,32 @@ def test_api_exposes_dynamic_plan_and_security_replan_history():
     summary = client.get(f'/workflows/{key}/summary').json()
     assert any(t['id'] == 'redirect_guard' and t['status'] == 'succeeded' for t in summary['plan'])
     assert summary['validation']['exit_code'] == 0
+
+
+def test_structured_events_summary_lineage_and_requirement_replacement():
+    data = client.post('/workflows', json={'requirement': 'Build URL shortener'}).json()
+    key = data['workflow_id']
+    data = client.post(f'/workflows/{key}/approvals/implementation').json()
+    report = client.get(f'/workflows/{key}/summary').json()
+    events = client.get(f'/workflows/{key}/events').json()
+    assert events['schema_version'] == 1
+    assert [e['message'] for e in events['records']] == events['events']
+    assert report['audit_event_count'] == len(events['records'])
+    assert report['artifact_lineage']['generated_files']['task_id'] == 'implementation'
+    assert report['artifact_lineage']['validation']['task_id'] == 'testing'
+    assert report['artifact_lineage']['documentation']['task_id'] == 'documentation'
+    assert report['artifact_lineage']['generated_files']['digest']
+    assert all(r['outcome'] == 'success' for r in report['task_runs'])
+    prior_events = events['records']
+    revised = client.post(f'/workflows/{key}/replan', json={'requirement': 'Build revised URL shortener'}).json()
+    assert revised['history'][-1]['artifact_lineage'] == report['artifact_lineage']
+    assert revised['history'][-1]['task_runs'] == report['task_runs']
+    assert revised['history'][-1]['audit_events'] == prior_events
+    events = client.get(f'/workflows/{key}/events').json()['records']
+    assert events[:len(prior_events)] == prior_events
+    assert [e['sequence'] for e in events] == list(range(1, len(events) + 1))
+    replacement = next(e for e in events if e['event_type'] == 'prior_outputs_invalidated')
+    assert 'workspace' in replacement['details']['invalidated_artifact_keys']
+    assert replacement['revision'] == 2
+    report = client.get(f'/workflows/{key}/summary').json()
+    assert report['artifact_lineage'] == {} and report['task_runs'] == []
