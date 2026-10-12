@@ -61,6 +61,8 @@ def test_runner_disables_inherited_plugins_options_and_removes_cached_bytecode(t
     assert not any(key in observed['env'] for key in ['PYTEST_ADDOPTS', 'PYTEST_PLUGINS', 'PYTHONPATH', 'PYTHONHOME'])
     assert observed['command'][-1] == 'test_generated.py'
     assert '-c' in observed['command'] and '--confcutdir' in observed['command']
+    root_index = observed['command'].index('--rootdir')
+    assert observed['command'][root_index + 1] == str(tmp_path)
     assert observed['timeout'] == 60
     release_guard(context)
 

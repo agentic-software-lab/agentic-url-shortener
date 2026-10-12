@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000';
+const ORCHESTRATOR = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://127.0.0.1:8001';
 
 export default function Home() {
   const [url, setUrl] = useState('https://example.com');
@@ -68,10 +69,38 @@ export default function Home() {
 
       <section className="card">
         <h2>2. Agentic SDLC Workflow</h2>
-        <div className="flow">
-          <span>Requirement</span><b>→</b><span>Requirements Agent</span><b>→</b><span>Planner</span><b>→</b><span>Architecture + Security</span><b>→</b><span className="approval">Human Approval</span><b>→</b><span>Implementation</span><b>→</b><span>Test + Docs</span><b>→</b><span>Validation</span><b>→</b><span>Release</span>
+        <p className="note">Workflow overview for greenfield and clarified requirements. Run a workflow in the orchestrator to inspect its actual task graph and status.</p>
+        <ol className="workflow-stages">
+          <li><strong>Interpret requirements</strong><p>Normalize scope and acceptance criteria. Ambiguous requests pause for clarification choices and human clarification approval.</p></li>
+          <li><strong>Plan tasks and dependencies</strong><p>The deterministic planner selects tasks from confirmed scope; analytics is included only when requested.</p></li>
+          <li><strong>Review in parallel</strong>
+            <div className="workflow-branches" aria-label="Parallel design reviews">
+              <div><b>Architecture</b><p>Record design decisions.</p></div>
+              <div><b>Security</b><p>Review constraints and request downstream guard work when needed.</p></div>
+            </div>
+            <p>Both reviews must succeed before implementation becomes eligible.</p>
+          </li>
+          <li className="workflow-approval"><strong>Human implementation approval</strong><p>Approve planned work before generating the candidate.</p></li>
+          <li><strong>Generate the candidate</strong><p>Produce source, tests, a reviewable diff, and an integrity manifest.</p></li>
+          <li><strong>Validate and document in parallel branches</strong>
+            <div className="workflow-branches" aria-label="Parallel validation and documentation branches">
+              <div><b>Testing / Validation</b><p>Wait for optional analytics and redirect-guard tasks, then check integrity, policy, and candidate tests.</p></div>
+              <div><b>Documentation</b><p>Write setup instructions and scope alongside the validation branch.</p></div>
+            </div>
+            <p>Release waits for successful testing and documentation.</p>
+          </li>
+          <li className="workflow-approval"><strong>Human release approval</strong><p>Review evidence. Release rechecks candidate integrity before marking review readiness.</p></li>
+          <li><strong>Reviewable engineering outcome</strong><p>Inspect artifacts, validation, decisions, audit records, and limitations in the summary.</p></li>
+        </ol>
+        <div className="workflow-detail">
+          <h3>Incremental replanning</h3>
+          <p>Agent findings can request new or revised downstream tasks. After wave synchronization, the engine validates the revised graph, preserves completed work, and records the reason and changes. Invalid plans safe-stop execution.</p>
+          <h3>Brownfield path</h3>
+          <p>Impact analysis, human implementation approval, a bounded expiration change, regression validation, human release approval, and final integrity verification.</p>
+          <p className="note">Replacing a requirement starts a new candidate with fresh approvals. Retries are bounded; registered fallback and rollback callbacks support recovery, and failed dependencies block downstream work.</p>
         </div>
-        <p className="note">Run the greenfield, brownfield, and ambiguous scenarios from the terminal to exercise dependency gates, approvals, retries and safe-stop behavior.</p>
+        <a className="workflow-link" href={`${ORCHESTRATOR}/docs`} target="_blank" rel="noreferrer">Open orchestrator: create, clarify, approve, and review workflows ↗</a>
+
       </section>
     </main>
   );
